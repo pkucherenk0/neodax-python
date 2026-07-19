@@ -55,6 +55,21 @@ def spot_resting_sell_price(top: SpotTopOfBook, tick: float = 0.01, dp: int = 2)
     return f"{0:.{dp}f}"  # empty book. market buy can't fill anyway. fill poll surface it
 
 
+def spot_reference_price_or_mark(top: SpotTopOfBook, mark_price: float) -> float:
+    """live-book reference (spot_reference_price), else the corresponding perp market's mark
+    price when the spot book is completely empty (quiet UAT market, no resting orders yet)."""
+    ref = spot_reference_price(top)
+    return ref if ref > 0 else mark_price
+
+
+def spot_resting_sell_price_or_mark(top: SpotTopOfBook, mark_price: float, tick: float = 0.01, dp: int = 2) -> str:
+    """like spot_resting_sell_price, but falls back to the perp mark price (instead of an
+    unusable "0.00") when the book is completely empty -- the maker's own resting order then
+    becomes the book's first price point."""
+    price = spot_resting_sell_price(top, tick, dp)
+    return price if float(price) > 0 else f"{mark_price:.{dp}f}"
+
+
 def create_spot_order(
     client: ResilientClient,
     app_session_id: str,

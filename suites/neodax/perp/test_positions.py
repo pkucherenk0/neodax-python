@@ -5,6 +5,8 @@ reduce-only. check balance/margin each step. NO retries.
 
 run: pytest -m serial suites/neodax/perp/test_positions.py   (one process, never -n)
 """
+import math
+
 import pytest
 
 from config.competition import perp_market, perp_trade
@@ -107,8 +109,14 @@ class TestPerpPositionLifecycle:
         assert long_before > 0, "a long position exists to close"
 
         mark = get_perp_mark_price(account.trading_client, mkt.market)
-        amount = size_amount(perp_trade.order_notional_usd, mark, mkt)
-        amt = float(amount)
+        # close the ACTUAL open size, not a fresh notional/mark recompute: mark moves live
+        # between test_1 (open) and here, so re-deriving amount from a new mark price can
+        # drift above the real position on either leg -> reduce-only rejected as
+        # insufficient_position. floor to the market's step size, matching flatten_perp_pair.
+        step_size = mkt.step_size if mkt.step_size > 0 else 10 ** -mkt.amount_precision
+        dp = max(mkt.amount_precision, 0)
+        amt = math.floor(long_before / step_size) * step_size
+        amount = f"{amt:.{dp}f}"
         # perp_maker rest reduce-only buy, new best bid. subject reduce-only sell own amount into it.
         top = get_perp_top_of_book(account.trading_client, mkt.market)
         maker_bid = maker_price_inside_spread("buy", top, mark, mkt)

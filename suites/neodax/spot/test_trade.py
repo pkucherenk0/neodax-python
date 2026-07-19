@@ -9,6 +9,7 @@ import re
 import pytest
 
 from config.competition import spot_market
+from lib.perp import get_perp_mark_price
 from lib.poll import poll_until
 from lib.report import record, record_check, stepping
 from lib.spot import (
@@ -16,7 +17,7 @@ from lib.spot import (
     get_spot_balance_snapshot,
     get_spot_fills_for_order,
     get_spot_top_of_book,
-    spot_resting_sell_price,
+    spot_resting_sell_price_or_mark,
 )
 
 
@@ -30,7 +31,10 @@ class TestSpotTrade:
         base_before = get_spot_balance_snapshot(account.trading_client, account.app_session_id, base)
 
         # seeded maker rests SELL one tick inside spread -> guaranteed counterparty (best ask).
-        price = spot_resting_sell_price(get_spot_top_of_book(spot_maker.trading_client, spot_market))
+        # book can be completely empty on a quiet UAT market -> fall back to the corresponding
+        # perp market's oracle-fed mark price, so this resting order becomes the first price point.
+        mark = get_perp_mark_price(spot_maker.trading_client, f"{spot_market}-PERP")
+        price = spot_resting_sell_price_or_mark(get_spot_top_of_book(spot_maker.trading_client, spot_market), mark)
         create_spot_order(spot_maker.order_client, spot_maker.app_session_id, market=spot_market,
                           side="sell", type="limit", amount=amount, price=price, tif="gtc")
 
@@ -44,6 +48,11 @@ class TestSpotTrade:
         fill = get_spot_fills_for_order(account.trading_client, account.app_session_id, spot_market, order_uuid)
         record("spot taker fill", fill.__dict__)
 
+        # balance ingestion trails trade recording by a beat -> poll rather than read once.
+        poll_until(
+            lambda: get_spot_balance_snapshot(account.trading_client, account.app_session_id, base).available,
+            lambda avail: avail > base_before.available, timeout_s=15, message=f"{base} balance credited from the buy",
+        )
         usdt_after = get_spot_balance_snapshot(account.trading_client, account.app_session_id, "USDT")
         base_after = get_spot_balance_snapshot(account.trading_client, account.app_session_id, base)
         record("balances around trade", {"usdtBefore": usdt_before.available, "usdtAfter": usdt_after.available,
