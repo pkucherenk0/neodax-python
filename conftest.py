@@ -289,24 +289,31 @@ def new_funded_account(env_cfg: EnvConfig, clients: ClientFactory):
 
 @pytest.fixture(scope="session")
 def account(env_cfg: EnvConfig, clients: ClientFactory) -> TradingAccount:
-    """funded + enrolled account, one per worker process (session scope == worker scope under
+    """funded cross account, one per worker process (session scope == worker scope under
     xdist). parallel workers never share balances. uat only: faucet spot USDT, move collateral
-    to perps, enroll competition. lazy."""
+    to perps. NOT enrolled in any competition — trading itself doesn't require it. use
+    `enrolled_account` for suites/competition/ tests that assert fee-overlay/volume behavior.
+    lazy."""
     if not env_cfg.has_faucet or not env_cfg.faucet_url:
         raise RuntimeError("The funded 'account' fixture requires a faucet (uat). "
                            "Stage pre-funded pool lease is not implemented yet.")
-    acct = _provision_funded(env_cfg, clients, spot_usdt=funding.spot_usdt,
+    return _provision_funded(env_cfg, clients, spot_usdt=funding.spot_usdt,
                              perp_usdt=funding.perp_usdt, role="account")
-    # enroll in competition so trades count. idempotent: 201 new / 200 already.
-    hub = clients.make(env_cfg.base_url, acct.jwt, max_retries=PATIENT_RETRIES)
+
+
+@pytest.fixture(scope="session")
+def enrolled_account(account: TradingAccount, env_cfg: EnvConfig, clients: ClientFactory) -> TradingAccount:
+    """`account`, additionally enrolled in the configured competition (idempotent: 201 new /
+    200 already-enrolled). competition-scoped tests only — see suites/competition/."""
+    hub = clients.make(env_cfg.base_url, account.jwt, max_retries=PATIENT_RETRIES)
     try:
         enroll = hub.client.post(f"/api/v1/competitions/{competition_slug}/enroll",
-                                 data={"address": acct.address, "terms_accepted": True})
+                                 data={"address": account.address, "terms_accepted": True})
         if enroll.status not in (200, 201):
             raise AssertionError(f"enroll into {competition_slug} failed: HTTP {enroll.status} {enroll.text()}")
     finally:
         hub.dispose()
-    return acct
+    return account
 
 
 @pytest.fixture(scope="session")

@@ -25,12 +25,12 @@ flow: dict = {"tiers": [], "base": None, "target": None, "campaign_vol": 0.0}
 
 
 @pytest.fixture(scope="module", autouse=True)
-def _flatten_after(account, perp_maker):
-    """teardown: SEEDED close so maker-side test position can't leak onto shared account."""
+def _flatten_after(enrolled_account, perp_maker):
+    """teardown: SEEDED close so maker-side test position can't leak onto shared enrolled_account."""
     yield
-    mkt = resolve_perp_market(account.trading_client, perp_market)
+    mkt = resolve_perp_market(enrolled_account.trading_client, perp_market)
     flatten_perp_pair(
-        PerpParty(order_client=account.order_client, trading_client=account.trading_client, app_session_id=account.app_session_id),
+        PerpParty(order_client=enrolled_account.order_client, trading_client=enrolled_account.trading_client, app_session_id=enrolled_account.app_session_id),
         PerpParty(order_client=perp_maker.order_client, trading_client=perp_maker.trading_client, app_session_id=perp_maker.app_session_id),
         mkt, perp_trade.leverage,
     )
@@ -67,20 +67,20 @@ class TestCompetitionFeeTierStepDown:
         flow["target"] = target
 
     @pytest.mark.timeout(600)  # driving volume + waiting ingestion genuinely long-running
-    def test_2_driving_volume_past_threshold_activates_overlay_at_qualified_tier(self, account, perp_maker):
+    def test_2_driving_volume_past_threshold_activates_overlay_at_qualified_tier(self, enrolled_account, perp_maker):
         target = flow["target"]
         assert target is not None, "phase 1 resolved the schedule"
 
         # arrange: resolve perp market filters, measure subject starting campaign volume.
-        mkt = resolve_perp_market(account.trading_client, perp_market)
-        start_vol = float(get_fee_tier_effective(account.trading_client).overlay.campaign_volume_usd or "0")
+        mkt = resolve_perp_market(enrolled_account.trading_client, perp_market)
+        start_vol = float(get_fee_tier_effective(enrolled_account.trading_client).overlay.campaign_volume_usd or "0")
         target_volume_usd = max(0.0, target.vol_min * fee_tier_flow.volume_overshoot - start_vol)
 
         # act: round-trip perp (subject takes, perp_maker rests inside spread) until subject
         # traded notional covers gap to threshold.
         driven = drive_competition_volume(
-            subject=VolumeParticipant(order_client=account.order_client, trading_client=account.trading_client,
-                                      app_session_id=account.app_session_id),
+            subject=VolumeParticipant(order_client=enrolled_account.order_client, trading_client=enrolled_account.trading_client,
+                                      app_session_id=enrolled_account.app_session_id),
             maker=MakerRef(order_client=perp_maker.order_client, app_session_id=perp_maker.app_session_id),
             market=mkt, leverage=perp_trade.leverage,
             order_notional_usd=fee_tier_flow.drive_order_notional_usd,
@@ -95,11 +95,11 @@ class TestCompetitionFeeTierStepDown:
 
         # assert: campaign volume ingests past threshold, overlay resolves to qualified tier.
         poll_until(
-            lambda: float(get_fee_tier_effective(account.trading_client).overlay.campaign_volume_usd or "0"),
+            lambda: float(get_fee_tier_effective(enrolled_account.trading_client).overlay.campaign_volume_usd or "0"),
             lambda vol: vol >= target.vol_min, timeout_s=fee_tier_flow.ingest_timeout_s, intervals=(5,),
             message="campaign volume ingested past the threshold",
         )
-        eff = get_fee_tier_effective(account.trading_client)
+        eff = get_fee_tier_effective(enrolled_account.trading_client)
         assert eff.overlay.active is True, "overlay active after ingestion"
         flow["campaign_vol"] = float(eff.overlay.campaign_volume_usd or "0")
         qualified = expected_comp_tier(flow["tiers"], flow["campaign_vol"])
@@ -112,7 +112,7 @@ class TestCompetitionFeeTierStepDown:
             "overlay perp taker == qualified tier rate"
 
     @pytest.mark.timeout(300)
-    def test_3_effective_perp_taker_steps_down_to_best_of_standard_overlay(self, account):
+    def test_3_effective_perp_taker_steps_down_to_best_of_standard_overlay(self, enrolled_account):
         target = flow["target"]
         base = flow["base"]
         assert target is not None and base is not None, "phase 1 resolved the schedule"
@@ -120,11 +120,11 @@ class TestCompetitionFeeTierStepDown:
         # act: let per-account engine settle effective rate to deepened tier (can trail
         # ingestion by ~1 fill). wait until AT target rate or deeper (best-of <= target).
         poll_until(
-            lambda: bps_to_rate(get_fee_tier_effective(account.trading_client).effective.perp_taker_bps),
+            lambda: bps_to_rate(get_fee_tier_effective(enrolled_account.trading_client).effective.perp_taker_bps),
             lambda rate: rate <= target.perp_taker, timeout_s=fee_tier_flow.ingest_timeout_s, intervals=(5,),
             message="effective perp taker settled at/below the target tier rate",
         )
-        eff = get_fee_tier_effective(account.trading_client)
+        eff = get_fee_tier_effective(enrolled_account.trading_client)
 
         # assert: effective == best-of(standard, overlay), stepped down below base rate.
         standard = bps_to_rate(eff.standard.perp_taker_bps)
@@ -138,7 +138,7 @@ class TestCompetitionFeeTierStepDown:
         assert effective < base.perp_taker, "effective perp taker stepped down below base"
 
     @pytest.mark.timeout(300)
-    def test_4_spot_taker_fill_charged_discounted_overlay_rate(self, account, spot_maker):
+    def test_4_spot_taker_fill_charged_discounted_overlay_rate(self, enrolled_account, spot_maker):
         base = flow["base"]
         assert base is not None, "phase 1 resolved the schedule"
 
@@ -150,17 +150,17 @@ class TestCompetitionFeeTierStepDown:
                           side="sell", type="limit", amount=amount, price=price, tif="gtc")
 
         # act: subject market-buys, lifts maker ask (subject is taker).
-        order_uuid = create_spot_order(account.order_client, account.app_session_id,
+        order_uuid = create_spot_order(enrolled_account.order_client, enrolled_account.app_session_id,
                                        market=spot_market, side="buy", type="market", amount=amount)
         poll_until(
-            lambda: get_spot_fills_for_order(account.trading_client, account.app_session_id, spot_market, order_uuid).fills,
+            lambda: get_spot_fills_for_order(enrolled_account.trading_client, enrolled_account.app_session_id, spot_market, order_uuid).fills,
             lambda fills: fills > 0, timeout_s=15, message="spot taker fill appeared",
         )
-        fill = get_spot_fills_for_order(account.trading_client, account.app_session_id, spot_market, order_uuid)
+        fill = get_spot_fills_for_order(enrolled_account.trading_client, enrolled_account.app_session_id, spot_market, order_uuid)
         record("spot taker fill", {"restingPrice": price, **fill.__dict__})
 
         # assert: real taker fill charged discounted overlay spot rate, below base spot rate (10->8 bps).
-        eff = get_fee_tier_effective(account.trading_client)
+        eff = get_fee_tier_effective(enrolled_account.trading_client)
         overlay_spot_taker = bps_to_rate(eff.overlay.spot_taker_bps or eff.standard.spot_taker_bps)
         record_check(name="spot taker fill charged the discounted overlay rate, below base",
                      passed=rates_match(fill.charged_rate, overlay_spot_taker) and fill.charged_rate < base.spot_taker,
@@ -172,16 +172,16 @@ class TestCompetitionFeeTierStepDown:
         assert fill.charged_rate < base.spot_taker, "charged spot taker below base spot rate"
 
     @pytest.mark.timeout(120)
-    def test_5_subject_maker_fill_charged_discounted_overlay_maker_rate(self, account, perp_maker):
+    def test_5_subject_maker_fill_charged_discounted_overlay_maker_rate(self, enrolled_account, perp_maker):
         # arrange: roles flip. enrolled subject RESTS sell as best ask (maker/short),
         # non-enrolled perp_maker lifts it. retry on moving book so subject reliably gets
         # a MAKER fill. proves overlay discounts subject MAKER side too.
-        mkt = resolve_perp_market(account.trading_client, perp_market)
+        mkt = resolve_perp_market(enrolled_account.trading_client, perp_market)
 
         # act: capture one clean maker fill for enrolled subject.
         fill = capture_subject_maker_fill(
-            subject=VolumeParticipant(order_client=account.order_client, trading_client=account.trading_client,
-                                      app_session_id=account.app_session_id),
+            subject=VolumeParticipant(order_client=enrolled_account.order_client, trading_client=enrolled_account.trading_client,
+                                      app_session_id=enrolled_account.app_session_id),
             maker=MakerRef(order_client=perp_maker.order_client, app_session_id=perp_maker.app_session_id),
             market=mkt, leverage=perp_trade.leverage, order_notional_usd=perp_trade.order_notional_usd,
         )
@@ -189,7 +189,7 @@ class TestCompetitionFeeTierStepDown:
 
         # assert: maker fill charged best-of(standard, overlay) maker rate, strictly below
         # standard maker rate. overlay discounts maker side, not just taker.
-        eff = get_fee_tier_effective(account.trading_client)
+        eff = get_fee_tier_effective(enrolled_account.trading_client)
         standard_maker = bps_to_rate(eff.standard.perp_maker_bps)
         overlay_maker = bps_to_rate(eff.overlay.perp_maker_bps or eff.standard.perp_maker_bps)
         record("subject maker fill", fill.__dict__)
