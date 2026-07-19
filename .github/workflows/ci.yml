@@ -1,7 +1,10 @@
 name: perp-spot-tests
 
-# Runs the neodax perp/spot API suites against live UAT on every push (any branch)
-# and on pull requests targeting main. See suites/neodax/perp, suites/neodax/spot.
+# Runs the neodax perp/spot API suites against live UAT on every push (any branch).
+# See suites/neodax/perp, suites/neodax/spot. Not the PR merge gate — that's
+# pr-check.yml (fast, safe-lane only). This one also covers PR branches via `push`
+# (any commit pushed to a PR's branch triggers this too), so there's no separate
+# pull_request trigger here — that would just double-run the same commit.
 #
 # NOTE: this deliberately runs @trades and @serial lanes too, which place REAL
 # orders on live UAT and spend real (throwaway UAT) balance on every push. That
@@ -10,8 +13,6 @@ name: perp-spot-tests
 
 on:
   push:
-  pull_request:
-    branches: [main]
 
 # cancel a superseded run on the same branch so we don't stack overlapping
 # live-trading runs against the same ref.

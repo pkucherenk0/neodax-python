@@ -1,0 +1,33 @@
+name: pr-check
+
+# Fast, PR-blocking gate: safe lane only (stateless + smoke), no live orders, no faucet
+# spend. Runs on every PR targeting main so it can be a required status check without
+# forcing reviewers to wait ~10 minutes for the live trades/serial lanes in ci.yml.
+# Those keep running on push (see ci.yml) for deeper live-UAT confidence, just not as
+# a merge gate.
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: pr-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  safe-lane:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Safe lane (stateless + smoke, default addopts)
+        run: pytest suites/neodax/perp suites/neodax/spot
