@@ -1,0 +1,91 @@
+{
+  "$comment": "BE API endpoint registry — the 'map' of backend routes in scope for THIS harness (competition fee-engine + the trading/auth/faucet flows that feed it). GENERATED from the BE repos; regenerate when their route files change (see generatedFrom). Cross-referenced against test call sites by scripts/api-coverage.mjs (npm run api-coverage). Adjacent product areas are intentionally excluded (see excludedAreas) so coverage % reflects this harness's mission, not the whole platform.",
+  "generatedFrom": {
+    "neodax": {
+      "repo": "/Users/pk/Documents/neodax",
+      "framework": "gin",
+      "routeFiles": [
+        "auth/cmd/auth/main.go (~L337-434)",
+        "trading-api/web_handlers.go (~L253-458)",
+        "trading-api/perp/routes.go (~L16-92)"
+      ]
+    },
+    "hub": {
+      "repo": "/Users/pk/Documents/yellow-pro-hub",
+      "framework": "gin",
+      "routeFiles": [
+        "internal/competition/http/router.go (~L18-36)",
+        "internal/competition/http/internal_fee_overlay.go (~L20-27)",
+        "internal/profile/http/router.go",
+        "internal/meta/http, internal/appconfig/http"
+      ]
+    },
+    "faucet": { "note": "external service (not in the neodax monorepo); route known from lib/funding.ts" }
+  },
+  "excludedAreas": [
+    "trading-api referral/partner/kol program (/referral/*, /partner/*, /kol/*)",
+    "trading-api third-party market feeds (/api/cmc/v1/*, /api/coingecko/*)",
+    "trading-api portfolio (/portfolio/*), api-keys (/accounts/api-keys/*), send/withdrawal, reporting (/reporting/yellow-holders, insurance-fund history)",
+    "auth email/social/i18n (/auth/email/*, /auth/clearnet-login, /auth/joinref, /auth/language)",
+    "hub profile (/api/v1/me/profile*, /api/v1/profile/options), meta (/api/v1/_meta/info), app-config (/api/v1/app-config)",
+    "health probes (/health, /health/live, /health/ready) on every service"
+  ],
+  "endpoints": [
+    { "service": "auth", "method": "POST", "path": "/auth/challenge", "auth": false },
+    { "service": "auth", "method": "POST", "path": "/auth/verify", "auth": false },
+    { "service": "auth", "method": "POST", "path": "/auth/refresh", "auth": false },
+    { "service": "auth", "method": "POST", "path": "/auth/logout", "auth": true },
+    { "service": "auth", "method": "GET", "path": "/auth/me", "auth": true },
+
+    { "service": "trading-api", "method": "GET", "path": "/orderbook", "auth": false },
+    { "service": "trading-api", "method": "GET", "path": "/klines", "auth": false },
+    { "service": "trading-api", "method": "GET", "path": "/ticker/24hr", "auth": false },
+    { "service": "trading-api", "method": "GET", "path": "/account/fee-schedule", "auth": false },
+    { "service": "trading-api", "method": "GET", "path": "/account/fee-tier", "auth": true },
+    { "service": "trading-api", "method": "GET", "path": "/account/fee-tier-effective", "auth": true },
+    { "service": "trading-api", "method": "GET", "path": "/features", "auth": true },
+    { "service": "trading-api", "method": "POST", "path": "/accounts/transfer", "auth": true },
+
+    { "service": "trading-api", "method": "GET", "path": "/spot/exchangeInfo", "auth": false },
+    { "service": "trading-api", "method": "GET", "path": "/spot/accounts", "auth": true },
+    { "service": "trading-api", "method": "GET", "path": "/spot/account", "auth": true },
+    { "service": "trading-api", "method": "GET", "path": "/spot/account/market-fee-rate", "auth": true },
+    { "service": "trading-api", "method": "POST", "path": "/spot/order", "auth": true },
+    { "service": "trading-api", "method": "DELETE", "path": "/spot/order", "auth": true },
+    { "service": "trading-api", "method": "GET", "path": "/spot/open_orders", "auth": true },
+    { "service": "trading-api", "method": "GET", "path": "/spot/orders", "auth": true },
+    { "service": "trading-api", "method": "GET", "path": "/spot/trades", "auth": true },
+
+    { "service": "trading-api", "method": "GET", "path": "/perpetual/exchangeInfo", "auth": false },
+    { "service": "trading-api", "method": "GET", "path": "/perpetual/market-risk-tiers", "auth": false },
+    { "service": "trading-api", "method": "GET", "path": "/perpetual/funding-rate/:symbol", "auth": false },
+    { "service": "trading-api", "method": "GET", "path": "/perpetual/funding-rates/current", "auth": false },
+    { "service": "trading-api", "method": "GET", "path": "/perpetual/funding-rates", "auth": false },
+    { "service": "trading-api", "method": "POST", "path": "/perpetual/order", "auth": true },
+    { "service": "trading-api", "method": "DELETE", "path": "/perpetual/order", "auth": true },
+    { "service": "trading-api", "method": "GET", "path": "/perpetual/orders", "auth": true },
+    { "service": "trading-api", "method": "GET", "path": "/perpetual/open_orders", "auth": true },
+    { "service": "trading-api", "method": "GET", "path": "/perpetual/positions", "auth": true },
+    { "service": "trading-api", "method": "POST", "path": "/perpetual/positions/close", "auth": true },
+    { "service": "trading-api", "method": "GET", "path": "/perpetual/position-history", "auth": true },
+    { "service": "trading-api", "method": "GET", "path": "/perpetual/position-history/:id", "auth": true },
+    { "service": "trading-api", "method": "POST", "path": "/perpetual/leverage", "auth": true },
+    { "service": "trading-api", "method": "GET", "path": "/perpetual/account", "auth": true },
+    { "service": "trading-api", "method": "GET", "path": "/perpetual/balance", "auth": true },
+    { "service": "trading-api", "method": "GET", "path": "/perpetual/trades", "auth": true },
+    { "service": "trading-api", "method": "GET", "path": "/perpetual/account/market-fee-rate", "auth": true },
+    { "service": "trading-api", "method": "GET", "path": "/perpetual/transaction/history", "auth": true },
+
+    { "service": "hub", "method": "GET", "path": "/api/v1/competitions", "auth": false },
+    { "service": "hub", "method": "GET", "path": "/api/v1/competitions/{idOrSlug}", "auth": false },
+    { "service": "hub", "method": "GET", "path": "/api/v1/competitions/{idOrSlug}/ranking", "auth": false },
+    { "service": "hub", "method": "GET", "path": "/api/v1/competitions/{idOrSlug}/broadcast-events", "auth": false },
+    { "service": "hub", "method": "GET", "path": "/api/v1/competitions/{idOrSlug}/broadcast-events/stream", "auth": false },
+    { "service": "hub", "method": "GET", "path": "/api/v1/competitions/{idOrSlug}/me", "auth": false },
+    { "service": "hub", "method": "POST", "path": "/api/v1/competitions/{idOrSlug}/enroll", "auth": true },
+    { "service": "hub", "method": "GET", "path": "/api/v1/internal/fee-overlay/{slug}", "auth": "api-key" },
+
+    { "service": "faucet", "method": "POST", "path": "/api/deposit", "auth": false },
+    { "service": "faucet", "method": "POST", "path": "/api/simulate-mark-price", "auth": false }
+  ]
+}

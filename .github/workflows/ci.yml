@@ -1,0 +1,56 @@
+name: perp-spot-tests
+
+# Runs the neodax perp/spot API suites against live UAT on every push (any branch)
+# and on pull requests targeting main. See suites/neodax/perp, suites/neodax/spot.
+#
+# NOTE: this deliberately runs @trades and @serial lanes too, which place REAL
+# orders on live UAT and spend real (throwaway UAT) balance on every push. That
+# was an explicit choice — see README.md "Safety rails" for what those markers
+# mean before changing this file.
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+# cancel a superseded run on the same branch so we don't stack overlapping
+# live-trading runs against the same ref.
+concurrency:
+  group: perp-spot-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  perp-spot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+        # No `playwright install` here: suites/neodax/perp and suites/neodax/spot
+        # use Playwright's request context (pure HTTP, no browser). Browsers are
+        # only needed for the e2e/ suite, which isn't run here.
+
+      - name: Safe lane (stateless + smoke, default addopts)
+        run: pytest suites/neodax/perp suites/neodax/spot
+
+      - name: Trades lane (places real orders on UAT)
+        run: pytest -m trades suites/neodax/perp suites/neodax/spot
+
+      - name: Serial lane (ordered flow, one process, no retries/cache)
+        run: pytest -m serial -p no:cacheprovider suites/neodax/perp suites/neodax/spot
+
+      - name: Upload run artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: neodax-results-${{ github.run_id }}
+          path: results/latest
+          if-no-files-found: ignore
+          retention-days: 14

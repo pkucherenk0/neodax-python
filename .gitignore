@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+.pytest_cache/
+results/
+test-results/
+reports/
+.env
+config/accounts.stage.json
