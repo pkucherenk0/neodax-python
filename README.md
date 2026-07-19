@@ -113,3 +113,4 @@ pytest equivalents above.
 - **[`CONVENTIONS.md`](./CONVENTIONS.md)** — the fixed, enforced test-writing rules. Read first.
 - **[`AGENTS.md`](./AGENTS.md)** — entry guide for AI agents and contributors.
 - Copy `suites/TEMPLATE_template.py` to start a new test.
+
