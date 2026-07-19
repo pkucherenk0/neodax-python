@@ -4,7 +4,7 @@ env unreachable / misconfigured -> downstream suites fail confusing. this fail f
 """
 import pytest
 
-from config.competition import competition_slug
+from configs.competition import competition_slug
 
 
 @pytest.mark.smoke

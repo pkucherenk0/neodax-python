@@ -7,7 +7,7 @@ taker. holds regardless of perp_maker volume: overlay gated on enroll, not volum
 """
 import pytest
 
-from config.competition import perp_market, perp_trade
+from configs.competition import perp_market, perp_trade
 from lib.fees import RATE_TOLERANCE, bps_to_rate, get_fee_tier_effective
 from lib.perp import (
     PerpParty,

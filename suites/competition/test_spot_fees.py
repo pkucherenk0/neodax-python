@@ -7,7 +7,7 @@ active for enrolled account, best-of never makes spot worse than standard.
 """
 import pytest
 
-from config.competition import competition_slug, spot_market
+from configs.competition import competition_slug, spot_market
 from lib.fees import bps_to_rate, get_fee_tier_effective, get_spot_market_fee_rate
 from lib.poll import poll_until
 from lib.schemas import EnrollResponse

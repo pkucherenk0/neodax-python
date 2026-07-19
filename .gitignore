@@ -5,4 +5,5 @@ results/
 test-results/
 reports/
 .env
-config/accounts.stage.json
+configs/accounts.stage.json
+.claude/

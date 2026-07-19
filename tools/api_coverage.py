@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""API endpoint coverage report. port of scripts/api-coverage.mjs.
+"""API endpoint coverage report. port of tools/api-coverage.mjs.
 
-cross-ref BE endpoint registry (config/api-endpoints.json — "map" of what backends expose)
-against endpoints this harness actually calls (scanned from lib/ + suites/ + e2e/ + conftest).
+cross-ref BE endpoint registry (configs/api-endpoints.json — "map" of what backends expose)
+against endpoints this harness actually calls (scanned from lib/ + suites/ + fixtures/ +
+conftest). e2e/ is a separate Node/TS project (UI e2e via real MetaMask) — not scanned here.
 
 two directions of drift shown:
   1. registry endpoints with NO test reference  -> coverage gaps (what to test next).
@@ -11,7 +12,7 @@ two directions of drift shown:
 path-level match (method + path, params/query normalized). does not diff request/response
 bodies — lib/schemas.py (pydantic) guards that at runtime.
 
-usage: python scripts/api_coverage.py [--strict]
+usage: python tools/api_coverage.py [--strict]
 """
 from __future__ import annotations
 
@@ -21,7 +22,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SCAN_DIRS = ["lib", "suites", "e2e"]
+SCAN_DIRS = ["lib", "suites", "fixtures"]
 SCAN_FILES = ["conftest.py"]
 STRICT = "--strict" in sys.argv
 
@@ -65,7 +66,7 @@ def referenced_endpoints() -> dict[str, set[str]]:
 
 
 def main() -> None:
-    registry = json.loads((ROOT / "config/api-endpoints.json").read_text())
+    registry = json.loads((ROOT / "configs/api-endpoints.json").read_text())
     endpoints = registry.get("endpoints", [])
     refs = referenced_endpoints()
     ref_keys = set(refs)

@@ -11,7 +11,7 @@ import math
 
 import pytest
 
-from config.competition import risk_tier
+from configs.competition import risk_tier
 from lib.perp import (
     cancel_perp_order,
     close_all_perp_positions,

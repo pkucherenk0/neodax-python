@@ -127,11 +127,11 @@ nightly), not on every push.
 
 Two inventories, each **anchored to a source of truth** (never hand-maintained lists — those rot):
 
-**API map — DONE.** `config/api-endpoints.json` is the registry of BE routes in scope for this
+**API map — DONE.** `configs/api-endpoints.json` is the registry of BE routes in scope for this
 harness (the competition fee-engine + the trading/auth/faucet flows that feed it), extracted from the
-BE repos (`neodax`, `yellow-pro-hub` — both Gin; see `generatedFrom` + `excludedAreas`). `npm run
-api-coverage` cross-references it against the endpoints the tests actually call (scanned from
-`lib/`/`fixtures/`/`suites/`/`e2e/`) and prints per-service coverage + two drift signals:
+BE repos (`neodax`, `yellow-pro-hub` — both Gin; see `generatedFrom` + `excludedAreas`). `python
+tools/api_coverage.py` cross-references it against the endpoints the tests actually call (scanned
+from `lib/`/`fixtures/`/`suites/`) and prints per-service coverage + two drift signals:
 - registry endpoints with no test → **coverage gaps** (what to test next),
 - paths referenced in tests but not in the registry → **stale map / typo** (regenerate).
 
@@ -141,27 +141,22 @@ regenerate the registry when the BE route files change (the `generatedFrom` poin
 runtime `zod` schemas (`lib/schemas.ts`) already guard request/response *shape*, so the map only has
 to track the *surface*, not the payloads.
 
-**FE map — STARTED (Page Object Model).** `e2e/pages/<Screen>.ts`, one object per screen keyed by
-`data-testid`; `e2e/pages/index.ts` is the screen registry (the FE analogue of the API registry).
-First screen: `FeeTiersPage` (route `/fee-tiers`, the UI mirror of `/account/fee-tier-effective`).
-
-The FE (yellow-neodax-client) currently exposes **no testids on the fee-tiers screen**, so the POM
-encodes a **testid CONTRACT** (`FEE_TIERS_TESTIDS`) — the exact ids the FE team should add in
-`src/features/fee-tiers/*` — and `e2e/pages-audit.e2e.ts` navigates each screen and **reports which
-contract testids resolve vs are missing** (as a test annotation). It's a report, not a hard failure,
-while the contract is pending — the forcing function that makes the gap visible and tracked. **Flip
-`missing`→assert once the FE ships them.** Contract to implement on `/fee-tiers`:
-`fee-tiers-page, current-tier-name, current-{spot,perp}-{taker,maker}-fee, fee-tiers-table`.
-
-Together the two maps give the coverage matrix: endpoint×tested (API) and screen/testid×tested (FE).
+**FE map — SUPERSEDED by a real UI e2e suite.** The original plan here was a Python Page Object
+Model (`e2e/pages/<Screen>.ts` + a testid-contract audit) — retired. It turned out the FE's
+wallet-connect gate (Reown AppKit + wagmi) can't be satisfied by session injection alone: the
+Open Long/Short buttons stay `disabled` and the Open Orders/Positions panels show "Connect Wallet
+to Start" without a *real* wallet connection, even though the underlying API calls succeed in the
+background. `e2e/` is now a separate Node/Playwright project driving a real MetaMask instance
+(dappwright) through the actual FE — see `e2e/lib/metamask.ts` for the connect-flow mechanics and
+`e2e/lib/actions.ts` for the named, reusable UI actions.
 
 ## 5. Recommended next steps
 
 1. **Adopt this repo now** as the API/contract E2E layer against uat/stage — it's ready.
 2. **Add contract guarding**: point `lib/schemas.ts` at (or generate from) the BE's OpenAPI so drift
    is caught cheaply, not only via slow E2E.
-3. **Add a `browser` project** here with 3–5 FE-integrated journeys, reusing `fixtures/` for
-   API-arrange + session injection; add one wallet-connect login test.
+3. ~~Add a `browser` project here with 3–5 FE-integrated journeys~~ — **DONE**, see `e2e/`
+   (real MetaMask, not session injection — that path turned out to be a dead end, see 4b above).
 4. **Wire post-deploy dispatch** from both BE and FE deploy workflows into this repo, reporting a
    status check back.
 5. Keep the split honest: fee-engine invariants stay in the API layer; the browser layer only asserts

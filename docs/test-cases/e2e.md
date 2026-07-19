@@ -1,11 +1,13 @@
 # Test cases — e2e
 
-grug list. `@e2e` = FE browser, opt-in project uat-browser. see [index](../../TEST_CASES.md).
+grug list. see [index](../../TEST_CASES.md).
 
-suites live under `e2e/`.
+suite lives under `e2e/` — a **separate Node/Playwright project**, not pytest. Real MetaMask
+wallet (dappwright) driving the actual FE, because the FE's wallet-connect gate (Reown AppKit +
+wagmi) can't be satisfied by session injection alone: order buttons stay `disabled` and the
+Open Orders/Positions panels show "Connect Wallet to Start" without a real wallet connection.
+Run: `cd e2e && npm install && npx playwright install chromium && npx playwright test`.
 
-| tag | case | grug |
-|---|---|---|
-| @e2e | session injection boot | seed token. app boot authed. no wallet-connect. |
-| @e2e (fixme) | VIP1 fee shown in UI | arrange VIP1 via api. UI show discount. (todo, need FE selectors) |
-| @e2e | fee-tiers testid contract | load /fee-tiers. report testid present/missing. |
+| case | grug |
+|---|---|
+| spot to perp transfer, UI order matched by API counterparty, position visible | real MetaMask connect. transfer spot->perp via UI. place resting perp limit order via UI. confirm in Open Orders. match via a raw API call from a second (API-only) account. confirm resulting position renders in UI. |

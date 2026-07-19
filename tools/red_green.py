@@ -7,7 +7,7 @@ runs the target test once (must PASS = baseline green), then MUTATES its expecte
 assert lines / pytest.approx calls) and re-runs: a real test now goes RED. if it still
 PASSES, the assertions are vacuous -> reported. file restored always.
 
-usage: python scripts/red_green.py <test_file> [-k "name"] [--env=uat] [--force]
+usage: python tools/red_green.py <test_file> [-k "name"] [--env=uat] [--force]
 SAFETY: trades/serial place LIVE orders even with mutated expectations -> refused unless --force.
 """
 from __future__ import annotations
@@ -21,7 +21,7 @@ from pathlib import Path
 def parse_args(argv: list[str]) -> tuple[str, str | None, str, bool]:
     file = next((a for a in argv if not a.startswith("-")), None)
     if not file:
-        print("usage: python scripts/red_green.py <test_file> [-k 'name'] [--env=uat] [--force]", file=sys.stderr)
+        print("usage: python tools/red_green.py <test_file> [-k 'name'] [--env=uat] [--force]", file=sys.stderr)
         sys.exit(2)
     grep = argv[argv.index("-k") + 1] if "-k" in argv else None
     env = next((a.split("=", 1)[1] for a in argv if a.startswith("--env=")), "uat")

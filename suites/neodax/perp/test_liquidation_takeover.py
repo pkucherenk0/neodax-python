@@ -19,7 +19,7 @@ run: pytest -m serial suites/neodax/perp/test_liquidation_takeover.py   (one pro
 """
 import pytest
 
-from config.competition import takeover_liquidation as cfg
+from configs.competition import takeover_liquidation as cfg
 from lib.liquidation import drive_cross_account_liquidation
 from lib.mark_price import MarkPriceInject, restore_mark_price
 from lib.perp import (
@@ -77,7 +77,7 @@ def _restore_marks(env_cfg, clients):
 class TestPerpLiquidationTakeoverPriceIntegrity:
     @pytest.mark.timeout(900)  # two provisions + two opens + hold two marks until liquidated + ingest
     def test_1_full_cross_liquidation_records_takeover_trades_with_non_negative_price_and_total(self, env, new_funded_account):
-        # Arrange — faucet host for mark injection (uat only), fresh cross subject + maker.
+        # arrange — faucet host for mark injection (uat only), fresh cross subject + maker.
         assert env.faucet_url, "faucet host needed for mark injection (uat)"
         faucet = env.client_for(None, env.faucet_url)
         subject = step("provision subject", lambda: new_funded_account(
@@ -137,7 +137,7 @@ class TestPerpLiquidationTakeoverPriceIntegrity:
         record("subject opened cross legs", {"longA": long_a, "entryA": entry_a, "longNotional": long_a * entry_a,
                                              "shortB": short_b, "entryB": entry_b, "shortNotional": short_b * entry_b})
 
-        # Act — crash market A toward 0 (shared equity deeply negative -> batch settles leg B
+        # act — crash market A toward 0 (shared equity deeply negative -> batch settles leg B
         # <=0 -> clamp), hold market B just ABOVE its entry (small LOSS -> short B is NOT IOC'd
         # as profitable in Step2).
         crash_mark = round_tick(entry_a * cfg.crash_to_pct, long_mkt.tick_size, long_mkt.price_precision)
@@ -167,7 +167,7 @@ class TestPerpLiquidationTakeoverPriceIntegrity:
         state["captured_trades"] = trades_a + trades_b
         state["liquidated"] = True
 
-        # Assert — full liquidation produced takeover trades; the SHORT leg clamped to 0; NONE negative.
+        # assert — full liquidation produced takeover trades; the SHORT leg clamped to 0; NONE negative.
         captured = state["captured_trades"]
         liq_trades = [t for t in captured if is_liq_trade(t)]
         takeovers = [t for t in captured if t.exec_type == "liquidation_takeover"]
@@ -214,12 +214,12 @@ class TestPerpLiquidationTakeoverPriceIntegrity:
         close_all_perp_positions(maker.order_client, maker.app_session_id, short_mkt.market)
 
     def test_2_no_trade_carries_negative_price_or_inconsistent_total(self):
-        # Arrange — reuse the trade history captured after the forced liquidation in test 1.
+        # arrange — reuse the trade history captured after the forced liquidation in test 1.
         assert state["liquidated"], "previous test forced a liquidation and captured trades"
         captured: list[PerpTrade] = state["captured_trades"]
         assert len(captured) > 0, "liquidated account has trade rows to scan"
 
-        # Act — inspect every recorded fill (all exec_types: trade, liquidation, takeover, adl).
+        # act — inspect every recorded fill (all exec_types: trade, liquidation, takeover, adl).
         bad_price = [t for t in captured if t.price < 0]
         bad_total = [t for t in captured if t.total < 0]
         # total must equal amount x price (the bug persisted total = amount x NEGATIVE price).
@@ -230,7 +230,7 @@ class TestPerpLiquidationTakeoverPriceIntegrity:
                                       "negativeTotal": [t.__dict__ for t in bad_total],
                                       "inconsistentTotal": [t.__dict__ for t in inconsistent]})
 
-        # Assert — no corrupt rows anywhere in the liquidated account's trade history.
+        # assert — no corrupt rows anywhere in the liquidated account's trade history.
         record_check(name="every trade price >= 0", passed=len(bad_price) == 0, detail=[t.__dict__ for t in bad_price])
         record_check(name="every trade total >= 0", passed=len(bad_total) == 0, detail=[t.__dict__ for t in bad_total])
         record_check(name="every trade total == amount x price", passed=len(inconsistent) == 0,

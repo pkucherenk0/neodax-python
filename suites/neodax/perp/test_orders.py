@@ -6,7 +6,7 @@ cancels anything failed run left resting.
 """
 import pytest
 
-from config.competition import perp_market, perp_trade
+from configs.competition import perp_market, perp_trade
 from lib.perp import (
     cancel_perp_order,
     create_perp_order,
@@ -43,15 +43,16 @@ def _cancel_leftovers(account):
 @pytest.mark.timeout(300)  # first use of account do faucet + transfer + enroll
 class TestPerpOrders:
     def test_resting_limit_order_appears_in_open_orders_and_can_be_cancelled(self, account):
+        # arrange — resolve market, price a buy 5% below mark (rests as bid, well below
+        # touch so never fills, still inside price band unlike an extreme price engine reject).
         mkt = resolve_perp_market(account.trading_client, perp_market)
         mark = get_perp_mark_price(account.trading_client, mkt.market)
         assert mark > 0, "perp mark price available"
         amount = size_amount(perp_trade.order_notional_usd, mark, mkt)
-        # buy limit 5% below mark. rest as bid, well below touch so never fills. still inside
-        # price band, unlike extreme price engine reject.
         rest_price = round_tick(mark * 0.95, mkt.tick_size, mkt.price_precision)
         before = get_perp_balance_snapshot(account.trading_client, account.app_session_id)
 
+        # act 1 — place the resting order, confirm it rests.
         order_uuid = step("place resting GTC limit buy 5% below mark",
                           lambda: create_perp_order(account.order_client, account.app_session_id,
                                                     market=mkt.market, side="buy", direction="long",
@@ -80,7 +81,7 @@ class TestPerpOrders:
         )
         record_check(name="order also visible in /orders history", passed=in_history, detail={"inHistory": in_history})
 
-        # cancel is async. poll until leaves open_orders.
+        # act 2 — cancel it. async, poll until it leaves open_orders.
         cancel = step("cancel the resting order",
                       lambda: cancel_perp_order(account.order_client, account.app_session_id, mkt.market, order_uuid))
         record("cancel response", cancel.model_dump())
@@ -95,6 +96,7 @@ class TestPerpOrders:
                      passed=abs(after.available - before.available) < 1e-6,
                      detail={"before": before.available, "after": after.available})
 
+        # assert — resting shape was correct, and cancel released the reserved collateral.
         assert mine.type == "limit", "order is a limit"
         assert mine.state in RESTING_STATES, "order is in a resting state"
         assert float(mine.fill_amount or "0") == 0, "resting order is unfilled"

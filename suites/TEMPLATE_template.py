@@ -18,7 +18,7 @@ class TestFeature:
         res = client.get("/api/v1/<resource>")
 
         # assert — check outcome vs ground truth. every test asserts once min.
-        assert res.ok
+        assert res.ok, "request succeeded"
 
         # wait on condition? use bounded poll. NEVER time.sleep:
         #   from lib.poll import poll_until

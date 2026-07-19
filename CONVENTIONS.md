@@ -62,8 +62,8 @@ Tests never depend on another test's side effects **except** within a single `se
 ## 8. Safety rails (fixed — money is real)
 - pytest has no retries by default and **none may ever be added** on `trades`/`serial`
   (no pytest-rerunfailures). A retry re-places live orders → double volume / lost funds.
-- No destructive default: the default run excludes `trades`/`serial`/`e2e` (pytest.ini).
-- Never log or commit secrets. `config/accounts.stage.json` is ignored.
+- No destructive default: the default run excludes `trades`/`serial` (pytest.ini).
+- Never log or commit secrets. `configs/accounts.stage.json` is ignored.
 - Private keys: never printed to stdout/report, never committed. EXCEPTION (§12): the artifact
   writer saves minted **UAT throwaway** wallet keys to git-ignored `results/runs/<runId>/artifacts/`.
   uat only, ephemeral. Do NOT save keys for `stage` (its pool is real).
@@ -71,7 +71,7 @@ Tests never depend on another test's side effects **except** within a single `se
 ## 9. Test data (fixed)
 - Stateless tests: one **fresh wallet per test** (`fresh_wallet()`) — zero shared state.
 - Funded tests: the **worker-leased `account`** (session-scoped = per xdist worker process).
-- No hardcoded slugs/tiers/notionals in specs — read from `config/` (typed, env-overridable).
+- No hardcoded slugs/tiers/notionals in specs — read from `configs/` (typed, env-overridable).
 
 ## 10. Readability for review & agents (fixed)
 - No branching logic in a test body (`if`/`try` around assertions).
@@ -104,7 +104,7 @@ Every minted account saved. every order + trade id saved. so a run can be traced
 A green test proves nothing until you've seen it go red. AI (and humans) write the test AND
 the expected value, so a test can silently "bless" wrong behavior. Every test must satisfy ALL:
 - **Red-green proof.** Before trusting a new green, make it fail on purpose and confirm red.
-  See `scripts/red_green.py` / README.
+  See `tools/red_green.py` / README.
 - **Independent oracle.** The expected value comes from a source the test did NOT compute —
   the BE code, the spec, a pydantic contract, or the *charged* value. Never assert a mirror
   function against itself (e.g. `select_risk_tier_for_notional`) except against LIVE data.

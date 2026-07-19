@@ -6,7 +6,7 @@ fill counts as comp volume for subject. ETHUSDT book thin, so make own liquidity
 """
 import pytest
 
-from config.competition import spot_market
+from configs.competition import spot_market
 from lib.fees import RATE_TOLERANCE, bps_to_rate, get_fee_tier_effective
 from lib.poll import poll_until
 from lib.spot import create_spot_order, get_spot_fills_for_order, get_spot_top_of_book, spot_resting_sell_price

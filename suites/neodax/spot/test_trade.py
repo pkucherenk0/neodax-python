@@ -8,7 +8,7 @@ import re
 
 import pytest
 
-from config.competition import spot_market
+from configs.competition import spot_market
 from lib.perp import get_perp_mark_price
 from lib.poll import poll_until
 from lib.report import record, record_check, stepping
@@ -25,19 +25,21 @@ from lib.spot import (
 @pytest.mark.timeout(300)  # first `account` use -> faucet + transfer + enroll
 class TestSpotTrade:
     def test_market_buy_fills_against_seeded_maker_and_moves_both_balances(self, account, spot_maker):
+        # arrange — snapshot balances, seed maker liquidity: rests SELL one tick inside
+        # spread -> guaranteed counterparty (best ask). book can be completely empty on a
+        # quiet UAT market -> fall back to the corresponding perp market's oracle-fed mark
+        # price, so this resting order becomes the first price point.
         base = re.sub(r"USDT$", "", spot_market)  # ETHUSDT -> ETH
         amount = "10.0000"
         usdt_before = get_spot_balance_snapshot(account.trading_client, account.app_session_id, "USDT")
         base_before = get_spot_balance_snapshot(account.trading_client, account.app_session_id, base)
 
-        # seeded maker rests SELL one tick inside spread -> guaranteed counterparty (best ask).
-        # book can be completely empty on a quiet UAT market -> fall back to the corresponding
-        # perp market's oracle-fed mark price, so this resting order becomes the first price point.
         mark = get_perp_mark_price(spot_maker.trading_client, f"{spot_market}-PERP")
         price = spot_resting_sell_price_or_mark(get_spot_top_of_book(spot_maker.trading_client, spot_market), mark)
         create_spot_order(spot_maker.order_client, spot_maker.app_session_id, market=spot_market,
                           side="sell", type="limit", amount=amount, price=price, tif="gtc")
 
+        # act — account market-buys (taker) and awaits the fill.
         with stepping("account market-buys (taker) and awaits the fill"):
             order_uuid = create_spot_order(account.order_client, account.app_session_id,
                                            market=spot_market, side="buy", type="market", amount=amount)
@@ -48,7 +50,8 @@ class TestSpotTrade:
         fill = get_spot_fills_for_order(account.trading_client, account.app_session_id, spot_market, order_uuid)
         record("spot taker fill", fill.__dict__)
 
-        # balance ingestion trails trade recording by a beat -> poll rather than read once.
+        # assert — real taker fill, USDT spent, base received. balance ingestion trails
+        # trade recording by a beat -> poll rather than read once.
         poll_until(
             lambda: get_spot_balance_snapshot(account.trading_client, account.app_session_id, base).available,
             lambda avail: avail > base_before.available, timeout_s=15, message=f"{base} balance credited from the buy",

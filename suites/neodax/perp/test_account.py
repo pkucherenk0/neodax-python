@@ -5,7 +5,7 @@ tests independent. detail report: results/latest/detailed-report.md
 """
 import pytest
 
-from config.competition import perp_market
+from configs.competition import perp_market
 from lib.perp import get_perp_account, get_perp_balance_snapshot, resolve_perp_market, set_perp_leverage
 from lib.report import record, record_check, step
 
@@ -16,18 +16,25 @@ LEVERAGE = 10
 @pytest.mark.timeout(300)  # first use of account do faucet + transfer + enroll
 class TestPerpAccount:
     def test_seeded_perp_account_reports_available_usdt_collateral(self, account):
+        # arrange — resolve market. account already funded by the fixture.
         mkt = resolve_perp_market(account.trading_client, perp_market)
+
+        # act — read perp collateral balance.
         bal = step("read perp balance",
                    lambda: get_perp_balance_snapshot(account.trading_client, account.app_session_id))
         record("balance", {"market": mkt.market, **bal.__dict__})
 
+        # assert — seeded account reports positive available collateral.
         record_check(name="seeded account has available USDT collateral", passed=bal.available > 0, detail=bal.__dict__)
         assert bal.available > 0, "available USDT collateral"
 
     @pytest.mark.timeout(120)
     def test_setting_initial_leverage_is_accepted_and_reflected_on_account(self, account):
+        # arrange — resolve market, snapshot balance before the leverage change.
         mkt = resolve_perp_market(account.trading_client, perp_market)
         before = get_perp_balance_snapshot(account.trading_client, account.app_session_id)
+
+        # act — set initial leverage.
         res = step(f"set leverage {LEVERAGE}x",
                    lambda: set_perp_leverage(account.order_client, account.app_session_id, mkt.market, LEVERAGE))
         record("set-leverage response", res.model_dump())
@@ -35,6 +42,7 @@ class TestPerpAccount:
         reflected = float((acct.initial_leverages or {}).get(mkt.market, "0"))
         after = get_perp_balance_snapshot(account.trading_client, account.app_session_id)
 
+        # assert — accepted, reflected on the account, and collateral untouched.
         record_check(name="set-leverage accepted", passed=res.success is True, detail=res.model_dump())
         record_check(name=f"account initial leverage == {LEVERAGE}x", passed=reflected == LEVERAGE,
                      detail={"reflected": reflected, "initial_leverages": acct.initial_leverages})

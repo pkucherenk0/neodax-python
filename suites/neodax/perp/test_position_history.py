@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from config.competition import position_history
+from configs.competition import position_history
 from lib.perp import (
     PerpParty,
     close_all_perp_positions,

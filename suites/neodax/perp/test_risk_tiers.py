@@ -7,7 +7,7 @@ env — that fail worth flag, not skip.
 """
 import pytest
 
-from config.competition import risk_tier
+from configs.competition import risk_tier
 from lib.risk_tiers import get_market_risk_tiers, maintenance_margin_for_notional, select_risk_tier_for_notional
 from lib.report import record, record_check
 from lib.schemas import FlatError
@@ -73,9 +73,11 @@ class TestPerpMarketRiskTiers:
     def test_keeps_every_tier_mmr_strictly_below_its_imr(self, env):
         # arrange
         client = env.client_for(None, env.trading_base)
+
+        # act
         tiers = get_market_risk_tiers(client, MARKET)
 
-        # act / assert — core margin safety invariant. also DB CHECK constraint on BE. tier
+        # assert — core margin safety invariant. also DB CHECK constraint on BE. tier
         # maintenance req must sit below initial req, else liquidation could trigger before
         # position even openable.
         assert len(tiers) >= 1
@@ -88,9 +90,11 @@ class TestPerpMarketRiskTiers:
     def test_sets_each_tier_imr_to_inverse_of_max_leverage(self, env):
         # arrange
         client = env.client_for(None, env.trading_base)
+
+        # act
         tiers = get_market_risk_tiers(client, MARKET)
 
-        # act / assert — terminology rule IMR = 1 / max_leverage. enforced by BE seed.
+        # assert — terminology rule IMR = 1 / max_leverage. enforced by BE seed.
         assert len(tiers) >= 1
         for t in tiers:
             expected = 1 / t.max_leverage
@@ -130,28 +134,33 @@ class TestPerpMarketRiskTiers:
         tiers = get_market_risk_tiers(client, MARKET)
         assert len(tiers) >= 2, "need at least two tiers to cross a boundary"
 
-        # act / assert — two distinct props at each tier cap:
-        #   (a) realistic path: position grow across boundary. MM(just over) must never drop
-        #       below MM(at cap). both terms carry notional, cant isolate tier effect alone.
-        #   (b) isolated tier effect: MM for SAME notional under higher vs lower tier rate.
-        #       hold notional fixed, so any increase is purely MMR stepping up.
-        rate_jumps = 0
+        # act — compute MM at each tier boundary: at the cap, and just over it into the next tier.
+        boundaries = []
         for i in range(1, len(tiers)):
             cap = tiers[i - 1].max_notional_quote
             mm_at_cap = maintenance_margin_for_notional(tiers, cap)  # on cap stay in lower tier (inclusive)
             mm_just_over = maintenance_margin_for_notional(tiers, cap * (1 + 1e-7))  # grow into higher tier
             mm_lower_rate = cap * tiers[i - 1].maintenance_margin_rate
             mm_higher_rate = cap * tiers[i].maintenance_margin_rate
+            boundaries.append((tiers[i].tier_index, cap, mm_at_cap, mm_just_over, mm_lower_rate, mm_higher_rate))
+
+        # assert — two distinct props at each tier cap:
+        #   (a) realistic path: position grow across boundary. MM(just over) must never drop
+        #       below MM(at cap). both terms carry notional, cant isolate tier effect alone.
+        #   (b) isolated tier effect: MM for SAME notional under higher vs lower tier rate.
+        #       hold notional fixed, so any increase is purely MMR stepping up.
+        rate_jumps = 0
+        for tier_index, cap, mm_at_cap, mm_just_over, mm_lower_rate, mm_higher_rate in boundaries:
             rate_stepped = mm_higher_rate > mm_lower_rate
             rate_jumps += int(rate_stepped)
             record_check(
-                name=f"crossing into tier {tiers[i].tier_index}: MM non-decreasing; same-notional rate step raised MM = {rate_stepped}",
+                name=f"crossing into tier {tier_index}: MM non-decreasing; same-notional rate step raised MM = {rate_stepped}",
                 passed=mm_just_over >= mm_at_cap - 1e-6 and mm_higher_rate >= mm_lower_rate,
                 detail={"cap": cap, "mmAtCap": mm_at_cap, "mmJustOver": mm_just_over,
                         "mmLowerRate": mm_lower_rate, "mmHigherRate": mm_higher_rate},
             )
-            assert mm_just_over >= mm_at_cap - 1e-6, f"MM must not drop as notional grows into tier {tiers[i].tier_index}"
-            assert mm_higher_rate >= mm_lower_rate, f"same-notional MM must not fall in the higher tier {tiers[i].tier_index}"
+            assert mm_just_over >= mm_at_cap - 1e-6, f"MM must not drop as notional grows into tier {tier_index}"
+            assert mm_higher_rate >= mm_lower_rate, f"same-notional MM must not fall in the higher tier {tier_index}"
         record("maintenance-margin tier-rate jumps", {"boundaries": len(tiers) - 1, "rateJumps": rate_jumps})
 
         # at least one boundary charge more maintenance margin for same notional once tier step

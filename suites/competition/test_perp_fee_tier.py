@@ -10,7 +10,7 @@ run: pytest -m serial suites/competition/test_perp_fee_tier.py   (never with -n)
 """
 import pytest
 
-from config.competition import competition_slug, fee_tier_flow, perp_market, perp_trade, spot_market
+from configs.competition import competition_slug, fee_tier_flow, perp_market, perp_trade, spot_market
 from lib.fee_flow import MakerRef, VolumeParticipant, capture_subject_maker_fill, drive_competition_volume
 from lib.fees import RATE_TOLERANCE, bps_to_rate, get_fee_tier_effective, rates_match
 from lib.perp import PerpParty, flatten_perp_pair, resolve_perp_market

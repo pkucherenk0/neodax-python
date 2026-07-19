@@ -11,7 +11,7 @@ run: pytest -m serial suites/neodax/perp/test_tiered_reduction.py   (one process
 """
 import pytest
 
-from config.competition import tiered_reduction as cfg
+from configs.competition import tiered_reduction as cfg
 from lib.liquidation import drive_stepwise_liquidation
 from lib.mark_price import restore_mark_price
 from lib.perp import (

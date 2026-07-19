@@ -6,7 +6,7 @@ leftovers from failed run.
 """
 import pytest
 
-from config.competition import spot_market
+from configs.competition import spot_market
 from lib.perp import get_perp_mark_price
 from lib.poll import poll_until
 from lib.report import record, record_check, step
@@ -41,15 +41,17 @@ def _cancel_leftovers(account):
 @pytest.mark.timeout(300)  # first `account` use -> faucet + transfer + enroll
 class TestSpotOrders:
     def test_resting_spot_limit_order_appears_in_open_orders_and_can_be_cancelled(self, account):
-        # spot book can be completely empty on a quiet UAT market (no resting orders from
-        # anyone yet) -> fall back to the corresponding perp market's oracle-fed mark price.
+        # arrange — price 10% below market (rests as bid, never fills). spot book can be
+        # completely empty on a quiet UAT market (no resting orders from anyone yet) -> fall
+        # back to the corresponding perp market's oracle-fed mark price.
         mark = get_perp_mark_price(account.trading_client, f"{spot_market}-PERP")
         ref = spot_reference_price_or_mark(get_spot_top_of_book(account.trading_client, spot_market), mark)
         assert ref > 0, "spot reference price available"
         amount = "1.0000"
-        price = f"{ref * 0.9:.2f}"  # 10% below market -> rests as bid, never fills
+        price = f"{ref * 0.9:.2f}"
         before = get_spot_balance_snapshot(account.trading_client, account.app_session_id, "USDT")
 
+        # act 1 — place the resting order, confirm it rests.
         order_uuid = step("place resting GTC spot limit buy 10% below market",
                           lambda: create_spot_order(account.order_client, account.app_session_id,
                                                     market=spot_market, side="buy", type="limit",
@@ -78,6 +80,8 @@ class TestSpotOrders:
         record_check(name="/spot/orders returns a valid order list", passed=isinstance(history, list),
                      detail={"count": len(history), "containsOurs": any(o.order_id == order_uuid for o in history)})
 
+        # act 2 — cancel it. async, poll until it leaves open_orders, then until the
+        # locked USDT releases (trails the open_orders change by a beat).
         cancel = step("cancel the resting spot order",
                       lambda: cancel_spot_order(account.order_client, account.app_session_id, spot_market, order_uuid))
         record("cancel response", cancel.model_dump())
@@ -99,6 +103,7 @@ class TestSpotOrders:
                      passed=abs(after.available - before.available) < 1e-6,
                      detail={"before": before.available, "after": after.available})
 
+        # assert — resting shape was correct, and cancel released the reserved USDT.
         assert mine.type == "limit", "order is a limit"
         assert mine.state in RESTING_STATES, "order is in a resting state"
         assert float(mine.fill_amount or "0") == 0, "resting order is unfilled"

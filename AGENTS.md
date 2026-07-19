@@ -13,21 +13,26 @@ pytest -m smoke                          # env connectivity check (fail fast)
 pytest -m trades                         # LIVE ORDERS — deliberate only
 pytest -m serial suites/<one-file>.py    # ordered flows — ONE process, never -n
 pytest --collect-only -q                 # discover tests without running
-python scripts/api_coverage.py           # BE endpoint registry × tests: coverage + drift
-python scripts/red_green.py <file> -k "name"   # prove a test can fail (CONVENTIONS §13)
+python tools/api_coverage.py           # BE endpoint registry × tests: coverage + drift
+python tools/red_green.py <file> -k "name"   # prove a test can fail (CONVENTIONS §13)
+```
 
-# FE-integrated E2E (browser) — opt-in. Needs the FE reachable + a browser.
-playwright install chromium
-NEODAX_FE_BASE=https://<uat-fe-host> pytest -m e2e e2e/
+## UI e2e (separate Node project — not pytest)
+`e2e/` drives the real FE through a real MetaMask wallet (dappwright) — Python session
+injection can't get past the FE's wallet-connect gate (order buttons stay disabled, Open
+Orders/Positions panels stay locked, even with a valid JWT). See `e2e/lib/metamask.ts` for why
+and how; `e2e/lib/actions.ts` for the reusable, named UI actions.
+```bash
+cd e2e && npm install && npx playwright install chromium && npx playwright test
 ```
 
 ## ⚠️ Safety rails — READ BEFORE RUNNING OR EDITING
 - Tests hit **live environments and spend real balance.** There is no isolated "test" env.
 - **`uat`** = fresh auto-funded wallets. **`stage`** = a FIXED pre-funded pool
-  (`config/accounts.stage.json`, git-ignored) — no faucet.
+  (`configs/accounts.stage.json`, git-ignored) — no faucet.
 - **Never add retries/reruns to any `trades` test.** A retry re-places live orders → double
   volume / lost funds. pytest has no retries by default; keep it that way.
-- The default run excludes `trades`/`serial`/`e2e` (pytest.ini addopts); nothing dangerous
+- The default run excludes `trades`/`serial` (pytest.ini addopts); nothing dangerous
   runs by default. Overriding `-m` is a deliberate act.
 - Secrets: never printed/committed. EXCEPTION: minted **UAT throwaway** wallet keys are saved
   to git-ignored `results/runs/<runId>/artifacts/` (CONVENTIONS §12) — uat only, never stage.
@@ -37,14 +42,16 @@ NEODAX_FE_BASE=https://<uat-fe-host> pytest -m e2e e2e/
 - `smoke`     — connectivity/health, fail-fast.
 - `trades`    — places real orders; run deliberately.
 - `serial`    — ordered flows (fee-tier, lifecycle, liquidation); one process, module state.
-- `e2e`       — FE browser tests (session injection).
+
+UI e2e tests live in the separate `e2e/` Node project (see above), not as a pytest marker here.
 
 ## Where things live
 - `CONVENTIONS.md` — **the fixed test-writing contract. Read before writing any test.**
   §11 = caveman comment rule. §13 = anti-false-positive rules.
 - `TEST_CASES.md` — index into per-topic lists under `docs/test-cases/` (copied from the TS
   original; content applies as-is). Add a row when you add a test.
-- `conftest.py`   — ALL fixtures: `env`, `fresh_wallet`, `account`, `spot_maker`, `perp_maker`,
+- `fixtures/`     — ALL fixtures, split by concern (`clients.py`, `accounts.py`, `reporting.py`):
+  `env`, `fresh_wallet`, `account`, `spot_maker`, `perp_maker`,
   `new_funded_account`. Get clients/accounts from fixtures, never ad-hoc. Also the detailed
   reporter (per-test actions/checks/records → `results/runs/<runId>/detailed-report.md`).
 - `lib/`          — pure, framework-agnostic domain logic (fees, tiers, sizing). Compose from here.
@@ -55,7 +62,7 @@ NEODAX_FE_BASE=https://<uat-fe-host> pytest -m e2e e2e/
 - `lib/report.py` — `step()` (timed action), `record()` (JSON), `record_check()` — enrich the
   report; they never affect pass/fail. `assert` stays the gate.
 - `lib/artifacts.py` — saves minted creds + order/trade ids (auto; CONVENTIONS §12).
-- `config/`       — typed run params (competition slug, sizing knobs). No CLI-flag archaeology.
+- `configs/`       — typed run params (competition slug, sizing knobs). No CLI-flag archaeology.
 - `suites/TEMPLATE_template.py` — copy this to add a test.
 
 ### Test isolation & shared accounts (read before adding trades tests)
@@ -87,9 +94,10 @@ NEODAX_FE_BASE=https://<uat-fe-host> pytest -m e2e e2e/
   Agents/CI: `results/latest/detailed/<test>.json`.
 
 ## Status
-Full port of the TS harness: lib (15 modules), fixtures, 18 suites (health, competition ×7,
-neodax perp ×8, neodax spot ×3), offline unit tests, red-green + api-coverage scripts, FE e2e
-session-injection + POM audit. **Offline unit tests pass; live suites are ported 1:1 from the
-proven TS specs but have NOT yet been executed against UAT from this repo** — run `pytest -m
-smoke`, then `-m stateless`, before trusting the trades lanes. Mutation testing (mutmut) and
-CI are not wired yet.
+Full port of the TS harness: lib (15 modules), fixtures/ (split by concern), 18 suites (health,
+competition ×7, neodax perp ×8, neodax spot ×3), offline unit tests, red-green + api-coverage
+tools, and a real UI e2e suite (`e2e/`, separate Node project — real MetaMask via dappwright,
+not session injection). Live suites have been run against UAT from this repo (safe/trades/serial
+lanes all green). CI is wired: `.github/workflows/ci.yml` (full lane, push) and
+`.github/workflows/pr-check.yml` (fast safe-lane, required PR check). Mutation testing (mutmut)
+is not wired yet.

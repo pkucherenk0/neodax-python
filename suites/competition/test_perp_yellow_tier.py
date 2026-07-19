@@ -15,7 +15,7 @@ import math
 
 import pytest
 
-from config.competition import competition_slug, yellow_flow
+from configs.competition import competition_slug, yellow_flow
 from lib.fees import bps_to_rate, get_fee_tier_effective
 from lib.funding import faucet_deposit
 from lib.poll import poll_until

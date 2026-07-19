@@ -9,7 +9,7 @@ import math
 
 import pytest
 
-from config.competition import perp_market, perp_trade
+from configs.competition import perp_market, perp_trade
 from lib.perp import (
     PerpParty,
     create_perp_order,
@@ -55,6 +55,8 @@ def _flatten_after(account, perp_maker):
 class TestPerpPositionLifecycle:
     @pytest.mark.timeout(300)  # first use of account do faucet + transfer + enroll
     def test_1_market_order_fills_against_seeded_liquidity_and_opens_position(self, account, perp_maker):
+        # arrange — resolve market, snapshot balance/position before, size the order,
+        # perp_maker rests sell one tick inside spread (guaranteed counterparty for buy).
         mkt = state["mkt"] = resolve_perp_market(account.trading_client, perp_market)
         before = get_perp_balance_snapshot(account.trading_client, account.app_session_id)
         long_before = long_size(get_perp_positions(account.trading_client, account.app_session_id, mkt.market))
@@ -62,12 +64,13 @@ class TestPerpPositionLifecycle:
         amount = size_amount(perp_trade.order_notional_usd, mark, mkt)
         amt = float(amount)
 
-        # perp_maker rest sell one tick inside spread. guaranteed counterparty for buy.
         top = get_perp_top_of_book(account.trading_client, mkt.market)
         maker_price = maker_price_inside_spread("sell", top, mark, mkt)
         create_perp_order(perp_maker.order_client, perp_maker.app_session_id, market=mkt.market,
                           side="sell", direction="short", type="limit", amount=amount, price=maker_price,
                           tif="gtc", leverage=LEVERAGE)
+
+        # act — subject market-buys, opening a long.
         order_uuid = step("subject market-buys (opens a long)",
                           lambda: create_perp_order(account.order_client, account.app_session_id,
                                                     market=mkt.market, side="buy", direction="long",
@@ -75,7 +78,8 @@ class TestPerpPositionLifecycle:
         fill = wait_for_perp_fill(account.trading_client, account.app_session_id, mkt.market, order_uuid, 15)
         record("open fill", fill.__dict__)
 
-        # wait for position to reflect our fill. long exposure grow by ~order amount. delta, not absolute.
+        # assert — position/balance reflect the fill. long exposure grow by ~order amount,
+        # delta not absolute (worker account shared across spec files, see AGENTS.md).
         poll_until(
             lambda: long_size(get_perp_positions(account.trading_client, account.app_session_id, mkt.market)),
             lambda size: size > long_before + amt * 0.5, timeout_s=15, message="long exposure grew",
@@ -102,6 +106,12 @@ class TestPerpPositionLifecycle:
 
     @pytest.mark.timeout(180)
     def test_2_closing_the_position_flattens_it_and_releases_margin(self, account, perp_maker):
+        # arrange — phase 1's position must exist. close the ACTUAL open size, not a fresh
+        # notional/mark recompute: mark moves live between test_1 (open) and here, so
+        # re-deriving amount from a new mark price can drift above the real position on
+        # either leg -> reduce-only rejected as insufficient_position. floor to the market's
+        # step size, matching flatten_perp_pair. perp_maker rests reduce-only buy, new best
+        # bid, so subject's reduce-only sell has a guaranteed counterparty.
         mkt = state["mkt"]
         assert mkt is not None, "phase 1 resolved the market"
         before = get_perp_balance_snapshot(account.trading_client, account.app_session_id)
@@ -109,20 +119,17 @@ class TestPerpPositionLifecycle:
         assert long_before > 0, "a long position exists to close"
 
         mark = get_perp_mark_price(account.trading_client, mkt.market)
-        # close the ACTUAL open size, not a fresh notional/mark recompute: mark moves live
-        # between test_1 (open) and here, so re-deriving amount from a new mark price can
-        # drift above the real position on either leg -> reduce-only rejected as
-        # insufficient_position. floor to the market's step size, matching flatten_perp_pair.
         step_size = mkt.step_size if mkt.step_size > 0 else 10 ** -mkt.amount_precision
         dp = max(mkt.amount_precision, 0)
         amt = math.floor(long_before / step_size) * step_size
         amount = f"{amt:.{dp}f}"
-        # perp_maker rest reduce-only buy, new best bid. subject reduce-only sell own amount into it.
         top = get_perp_top_of_book(account.trading_client, mkt.market)
         maker_bid = maker_price_inside_spread("buy", top, mark, mkt)
         create_perp_order(perp_maker.order_client, perp_maker.app_session_id, market=mkt.market,
                           side="buy", direction="short", type="limit", amount=amount, price=maker_bid,
                           tif="gtc", reduce_only=True, leverage=LEVERAGE)
+
+        # act — subject reduce-only sells to close.
         close_uuid = step("subject reduce-only sells to close",
                           lambda: create_perp_order(account.order_client, account.app_session_id,
                                                     market=mkt.market, side="sell", direction="long",
@@ -131,7 +138,8 @@ class TestPerpPositionLifecycle:
         close_fill = wait_for_perp_fill(account.trading_client, account.app_session_id, mkt.market, close_uuid, 20)
         record("close fill", close_fill.__dict__)
 
-        # long exposure drop by our amount. delta, not to zero if prior suite left one.
+        # assert — long exposure drops by our amount (delta, not to zero if prior suite left
+        # one) and margin releases back.
         poll_until(
             lambda: long_size(get_perp_positions(account.trading_client, account.app_session_id, mkt.market)),
             lambda size: size < long_before - amt * 0.5, timeout_s=20, message="long exposure dropped",
