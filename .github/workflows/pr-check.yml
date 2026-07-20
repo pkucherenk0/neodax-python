@@ -1,10 +1,10 @@
 name: pr-check
 
-# Fast, PR-blocking gate: safe lane only (stateless + smoke), no live orders, no faucet
-# spend. Runs on every PR targeting main so it can be a required status check without
-# forcing reviewers to wait ~10 minutes for the live trades/serial lanes in ci.yml.
-# Those keep running on push (see ci.yml) for deeper live-UAT confidence, just not as
-# a merge gate.
+# PR-blocking gate. Two required checks:
+#  - safe-lane: fast (stateless + smoke), no live orders, no faucet spend.
+#  - e2e-ui: real MetaMask (dappwright) browser automation against the deployed UAT FE,
+#    places real live orders on UAT. Deliberately blocking too (explicit choice, heavier
+#    than safe-lane) -- see e2e/README / AGENTS.md for what the suite does.
 
 on:
   pull_request:
@@ -31,3 +31,47 @@ jobs:
 
       - name: Safe lane (stateless + smoke, default addopts)
         run: pytest suites/neodax/perp suites/neodax/spot
+
+  e2e-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up Python venv (global-setup.ts execs .venv/bin/python3)
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -r requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Install e2e dependencies
+        working-directory: e2e
+        run: npm ci
+
+      - name: Install Playwright browser + OS deps (+ xvfb for headed MetaMask popups)
+        working-directory: e2e
+        run: |
+          sudo apt-get update && sudo apt-get install -y xvfb
+          npx playwright install --with-deps chromium
+
+      - name: Real MetaMask e2e (spot->perp transfer, order, API counterparty match, position visible)
+        working-directory: e2e
+        run: xvfb-run --auto-servernum npm test
+
+      - name: Upload e2e screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots-${{ github.run_id }}
+          path: e2e/screenshots
+          if-no-files-found: ignore
+          retention-days: 14
