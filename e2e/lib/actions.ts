@@ -20,11 +20,18 @@ export async function takeScreenshot(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: `${SCREENSHOT_DIR}/${name}.png`, fullPage: true });
 }
 
+/** Every `page.goto()` here is a full page load, not a SPA route change -- give the JS bundle
+ * a moment to boot and paint the header before querying anything page-specific. NOTE: this
+ * proves the page finished its initial render, NOT that the wallet session is authenticated
+ * on this route -- the header (including the Deposit link) renders identically either way.
+ * connectMetaMask() is what actually guarantees authentication; this is just a render-ready
+ * check to avoid racing the SPA's own boot. */
+async function waitForAppHydrated(page: Page): Promise<void> {
+  await expect(page.getByRole('link', { name: 'Deposit' })).toBeVisible();
+}
+
 export async function openHomePage(page: Page, feBase: string): Promise<void> {
   await page.goto(feBase);
-  // first render after navigation -- inherits the config's global 20s expect timeout
-  // (playwright.config.ts), not the 5s locator default. CI is slower/more variable than
-  // local dev, and per-call overrides here kept getting outpaced one at a time.
   await expect(page.getByRole('button', { name: 'Connect' }).first()).toBeVisible();
   await takeScreenshot(page, '00-home-before-connect');
 }
@@ -36,6 +43,7 @@ export async function transferSpotBalanceToPerpetual(
   amount: string,
 ): Promise<void> {
   await page.goto(`${feBase}/assets`);
+  await waitForAppHydrated(page);
   await expect(page.getByRole('button', { name: 'Transfer' })).toBeVisible();
   await takeScreenshot(page, '02-assets-before-transfer');
 
@@ -48,6 +56,7 @@ export async function transferSpotBalanceToPerpetual(
 
 export async function assertPerpetualBalanceContains(page: Page, feBase: string, expectedText: string): Promise<void> {
   await page.goto(`${feBase}/assets`);
+  await waitForAppHydrated(page);
   const perpetualTab = page.getByText('Perpetual', { exact: true }).first();
   await expect(perpetualTab).toBeVisible();
   await perpetualTab.click();
@@ -75,6 +84,7 @@ export async function placeRestingPerpLimitBuy(
   size: string,
 ): Promise<void> {
   await page.goto(`${feBase}/perps/${market.toLowerCase()}`);
+  await waitForAppHydrated(page);
   const limitTab = page.getByText('Limit', { exact: true }).first();
   await expect(limitTab).toBeVisible();
   await limitTab.click();
@@ -155,7 +165,7 @@ export async function assertPositionVisibleInUi(page: Page, marketBase: string, 
 
   for (;;) {
     await page.reload();
-    await expect(page.getByRole('link', { name: 'Deposit' })).toBeVisible(); // app re-hydrated, inherits config default
+    await waitForAppHydrated(page);
     // same count-badge caveat as Open Orders -- not exact once a position exists.
     await page.getByText('Positions', { exact: false }).first().click();
 

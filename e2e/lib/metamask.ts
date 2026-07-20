@@ -1,15 +1,24 @@
 /**
  * Reusable MetaMask (dappwright) helpers, shared across tests/*.spec.ts.
  *
- * Findings this is built on (confirmed via manual recording during development):
+ * Findings this is built on (confirmed via manual recording during development, and via
+ * screenshots + accessibility snapshots captured on live CI failures):
  * - dappwright's own wallet.approve()/sign() assume every popup step opens a NEW Playwright
- *   `page` and closes when done. This app's popup instead NAVIGATES IN PLACE between steps
- *   (connect -> its own SIWE-style signature request), so those calls hang forever waiting
- *   for a 'close' event that only fires after a step they never handle. Handled manually here.
- * - This app runs on state channels (Yellow/Nitrolite): some actions (e.g. placing an order)
- *   sign a state update, not just a REST call, and pop a SECOND (or more) MetaMask
- *   confirmation independent of the connect flow. withOptionalApproval() below is generic
- *   over "however many popups this action happens to need, including zero".
+ *   `page` and closes when done, always in the same way. This app's connect flow (its own
+ *   connect approval, then a follow-up SIWE-style signature request) doesn't reliably behave
+ *   the same way every run: sometimes the same popup navigates in place, sometimes a second
+ *   popup opens separately. connectMetaMask() below handles both -- but unlike
+ *   withOptionalApproval() (used for LATER actions, e.g. placing an order, where a signature
+ *   prompt genuinely may or may not appear), the connect flow's signature step is NOT
+ *   optional: skipping it leaves the account looking connected (the header renders normally)
+ *   while every page underneath still shows "Connect your account to continue". Treating it
+ *   as optional was a real regression introduced in this file's history -- it must be waited
+ *   for, not raced against the popup merely closing.
+ * - The header (including its "Deposit" link) renders identically whether or not the wallet
+ *   is actually authenticated -- it is NOT a valid "connected" signal, despite looking like
+ *   one. The only signal proven reliable by inspecting an actual failure's accessibility
+ *   snapshot: an unauthenticated page shows a "Connect" button; an authenticated one shows
+ *   none anywhere on the page.
  */
 import { expect } from '@playwright/test';
 import { BrowserContext, Page } from 'playwright-core';
@@ -35,35 +44,44 @@ export async function bootstrapMetaMask(mnemonic: string): Promise<{ wallet: Dap
   return { wallet, context };
 }
 
-/** Click Connect -> MetaMask -> approve the connect popup -> approve its follow-up
- * signature request IF one shows up (same popup, navigates in place -- see file header).
- * Whether the follow-up signature request happens is app/session-state dependent -- CI runs
- * observed the popup sometimes closing right after the connect approval with no second step,
- * where local dev runs always saw the two-step flow. Race both outcomes instead of assuming
- * the popup stays open. */
+/** Click Connect -> MetaMask -> approve the connect popup -> approve its REQUIRED follow-up
+ * signature request, then confirm the app actually finished authenticating. Both approval
+ * steps are mandatory (see file header) -- the second one can show up either as the same
+ * popup navigating in place, or as a genuinely separate new popup, so both are handled, but
+ * neither is skippable. */
 export async function connectMetaMask(page: Page, context: BrowserContext): Promise<void> {
   await page.getByRole('button', { name: 'Connect' }).first().click();
   await expect(page.getByText('MetaMask', { exact: true })).toBeVisible();
 
   const popupPromise = context.waitForEvent('page');
   await page.getByText('MetaMask', { exact: true }).click();
-  const popup = await popupPromise;
+  let popup = await popupPromise;
   await popup.waitForLoadState();
 
+  // Step 1: connect approval.
   await popup.getByRole('button', { name: 'Connect' }).click();
 
-  await Promise.race([
-    popup.waitForEvent('close', { timeout: 15000 }).catch(() => {}),
-    popup.waitForURL(/signature-request/, { timeout: 15000 }).catch(() => {}),
-  ]);
-
-  if (!popup.isClosed()) {
-    // didn't close on its own -> the connect approval navigated to the follow-up signature
-    // request, which still needs confirming.
-    await popup.getByRole('button', { name: 'Confirm' }).click();
-    await popup.waitForEvent('close', { timeout: 15000 }).catch(() => {});
+  // Step 2: the app's own SIWE-style signature request -- REQUIRED. Wait for whichever shape
+  // it takes (same popup navigating, or a new one opening) instead of racing against close.
+  const nextPopupPromise = context.waitForEvent('page', { timeout: 20000 }).catch(() => null);
+  const navigatedInPlace = await popup.waitForURL(/signature-request/, { timeout: 20000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!navigatedInPlace) {
+    const newPopup = await nextPopupPromise;
+    if (newPopup) {
+      popup = newPopup;
+      await popup.waitForLoadState();
+    }
   }
+  await popup.getByRole('button', { name: /^(Confirm|Sign)$/ }).click({ timeout: 20000 });
+  await popup.waitForEvent('close', { timeout: 20000 }).catch(() => {});
   await page.bringToFront();
+
+  // Confirm the app actually finished authenticating. The header renders the same shell
+  // either way (see file header) -- an unauthenticated page always shows a "Connect" button
+  // somewhere; its absence is the real signal.
+  await expect(page.getByRole('button', { name: 'Connect' })).toHaveCount(0);
 }
 
 /** Run `action`, then approve however many MetaMask popups it triggers (Confirm/Sign/Connect,
