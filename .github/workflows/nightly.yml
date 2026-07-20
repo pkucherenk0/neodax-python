@@ -1,0 +1,165 @@
+name: nightly
+
+# Full live-UAT run (safe-lane + trades + serial + real MetaMask e2e-ui) once a day, plus
+# on-demand via workflow_dispatch. On any failure, a follow-up `self-heal` job runs Claude
+# Code headlessly to triage it:
+#   - genuine bug in test code / repo config it can confidently fix -> branch + PR (never
+#     pushed straight to main -- same rule as everywhere else in this repo)
+#   - UAT flakiness / live-market condition / anything uncertain -> a GitHub issue, not a PR
+# It explicitly never retries or re-runs the failed @trades/@serial steps itself -- same
+# "no retry on live-order tests" rule as pytest.ini. Detect + report, not auto-retry.
+#
+# Requires the ANTHROPIC_API_KEY repository secret. For self-heal PRs to actually trigger
+# pr-check.yml's required checks, the Claude GitHub App should be installed on this repo
+# (run `/install-github-app` from Claude Code) -- commits authored by the plain
+# GITHUB_TOKEN don't trigger downstream workflows.
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # 03:00 UTC daily, low-traffic
+  workflow_dispatch: {}
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  full-suite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Safe lane (stateless + smoke, default addopts)
+        run: pytest suites/neodax/perp suites/neodax/spot
+
+      - name: Trades lane (places real orders on UAT)
+        run: pytest -m trades suites/neodax/perp suites/neodax/spot
+
+      - name: Serial lane (ordered flow, one process, no retries/cache)
+        run: pytest -m serial -p no:cacheprovider suites/neodax/perp suites/neodax/spot
+
+      - name: Upload run artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-results-${{ github.run_id }}
+          path: results/latest
+          if-no-files-found: ignore
+          retention-days: 14
+
+  e2e-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up Python venv (global-setup.ts execs .venv/bin/python3)
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -r requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Install e2e dependencies
+        working-directory: e2e
+        run: npm ci
+
+      - name: Install Playwright browser + OS deps (+ xvfb for headed MetaMask popups)
+        working-directory: e2e
+        run: |
+          sudo apt-get update && sudo apt-get install -y xvfb
+          npx playwright install --with-deps chromium
+
+      - name: Real MetaMask e2e (spot->perp transfer, order, API counterparty match, position visible)
+        working-directory: e2e
+        run: xvfb-run --auto-servernum npm test
+
+      - name: Upload e2e screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-e2e-screenshots-${{ github.run_id }}
+          path: e2e/screenshots
+          if-no-files-found: ignore
+          retention-days: 14
+
+  self-heal:
+    needs: [full-suite, e2e-ui]
+    if: always() && (needs.full-suite.result == 'failure' || needs.e2e-ui.result == 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download failure artifacts (best-effort)
+        uses: actions/download-artifact@v4
+        with:
+          pattern: nightly-*
+          path: nightly-artifacts
+        continue-on-error: true
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            The nightly full test-suite run for neodax-python just failed.
+            Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            full-suite result: ${{ needs.full-suite.result }}
+            e2e-ui result: ${{ needs.e2e-ui.result }}
+            Any downloaded failure artifacts (pytest output, e2e screenshots/traces) are in
+            ./nightly-artifacts, if that step succeeded.
+
+            Your job: diagnose the failure(s) and respond appropriately. DETECT AND REPORT --
+            do not auto-retry.
+
+            Hard rules (already established elsewhere in this repo -- follow them exactly):
+            - NEVER add or trigger a retry/rerun of @trades or @serial tests. A retry
+              re-places live orders against real (throwaway UAT) balance. If a test is flaky,
+              that is itself a bug or environment issue to report or fix in the TEST CODE --
+              never paper over it with a retry/rerun mechanism.
+            - NEVER push directly to main. Any code fix must go through a new branch + PR, and
+              must NOT be merged by you -- a human merges after the required checks
+              (safe-lane, e2e-ui) pass.
+            - Do not touch configs/accounts.stage.json, .env, or any secret/credential
+              material.
+
+            Steps:
+            1. Use `gh run view ${{ github.run_id }} --log-failed` (and the downloaded
+               artifacts) plus the relevant test/lib source to understand exactly what failed
+               and why.
+            2. Classify each distinct failure as either:
+               (a) a genuine, confidently-fixable bug in test code or repo config (e.g. a
+                   wrong formula, a race condition, a bad locator/timeout, a stale assumption)
+               (b) UAT environment flakiness, a live-market condition (thin book, a
+                   competition not currently enrollable, transient 5xx), or anything you are
+                   not confident is a code problem.
+            3. For each (a): create a new branch, make the minimal correct fix, and open a PR
+               explaining the failure, the root cause, and the fix -- cite the specific log
+               lines/values that led you there.
+            4. For (b), or when you're not sure: open a GitHub issue (not a PR) summarizing
+               what failed, your best-guess cause, and a link to this run, so a human can
+               triage it.
+            5. If a single night's failures mix (a) and (b), do both: one PR per fixable
+               issue, one issue covering the rest. Don't bundle unrelated fixes into one PR.
+          claude_args: "--max-turns 40 --model claude-sonnet-5"
