@@ -22,9 +22,10 @@ export async function takeScreenshot(page: Page, name: string): Promise<void> {
 
 export async function openHomePage(page: Page, feBase: string): Promise<void> {
   await page.goto(feBase);
-  // first render after navigation -- CI runners are slower than local dev (confirmed by the
-  // Deposit-link timeout below), give it real headroom, not the 5s locator default.
-  await expect(page.getByRole('button', { name: 'Connect' }).first()).toBeVisible({ timeout: 15000 });
+  // first render after navigation -- inherits the config's global 20s expect timeout
+  // (playwright.config.ts), not the 5s locator default. CI is slower/more variable than
+  // local dev, and per-call overrides here kept getting outpaced one at a time.
+  await expect(page.getByRole('button', { name: 'Connect' }).first()).toBeVisible();
   await takeScreenshot(page, '00-home-before-connect');
 }
 
@@ -35,7 +36,7 @@ export async function transferSpotBalanceToPerpetual(
   amount: string,
 ): Promise<void> {
   await page.goto(`${feBase}/assets`);
-  await expect(page.getByRole('button', { name: 'Transfer' })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole('button', { name: 'Transfer' })).toBeVisible();
   await takeScreenshot(page, '02-assets-before-transfer');
 
   await page.getByRole('button', { name: 'Transfer' }).click();
@@ -48,9 +49,9 @@ export async function transferSpotBalanceToPerpetual(
 export async function assertPerpetualBalanceContains(page: Page, feBase: string, expectedText: string): Promise<void> {
   await page.goto(`${feBase}/assets`);
   const perpetualTab = page.getByText('Perpetual', { exact: true }).first();
-  await expect(perpetualTab).toBeVisible({ timeout: 15000 });
+  await expect(perpetualTab).toBeVisible();
   await perpetualTab.click();
-  await expect(page.getByText(expectedText, { exact: false }).first()).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText(expectedText, { exact: false }).first()).toBeVisible();
   await takeScreenshot(page, '03-perp-balance');
 }
 
@@ -75,7 +76,7 @@ export async function placeRestingPerpLimitBuy(
 ): Promise<void> {
   await page.goto(`${feBase}/perps/${market.toLowerCase()}`);
   const limitTab = page.getByText('Limit', { exact: true }).first();
-  await expect(limitTab).toBeVisible({ timeout: 15000 });
+  await expect(limitTab).toBeVisible();
   await limitTab.click();
 
   const inputs = page.locator('input[type=text]');
@@ -96,11 +97,11 @@ export async function assertOrderVisibleInOpenOrders(page: Page, marketBase: str
   // NOT exact: true -- once an order exists this tab carries a count badge (e.g. "01"),
   // so its accessible text becomes "Open Orders01", which exact matching would miss.
   const openOrdersTab = page.getByText('Open Orders', { exact: false }).first();
-  await expect(openOrdersTab).toBeVisible({ timeout: 10000 });
-  await openOrdersTab.click({ timeout: 10000 });
+  await expect(openOrdersTab).toBeVisible();
+  await openOrdersTab.click();
   await takeScreenshot(page, '04c-open-orders-tab-clicked');
 
-  await expect(page.getByText(marketBase, { exact: false }).first()).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText(marketBase, { exact: false }).first()).toBeVisible();
   await takeScreenshot(page, '05-open-orders');
 }
 
@@ -154,7 +155,7 @@ export async function assertPositionVisibleInUi(page: Page, marketBase: string, 
 
   for (;;) {
     await page.reload();
-    await expect(page.getByRole('link', { name: 'Deposit' })).toBeVisible({ timeout: 15000 }); // app re-hydrated
+    await expect(page.getByRole('link', { name: 'Deposit' })).toBeVisible(); // app re-hydrated, inherits config default
     // same count-badge caveat as Open Orders -- not exact once a position exists.
     await page.getByText('Positions', { exact: false }).first().click();
 
