@@ -91,7 +91,13 @@ def main() -> None:
         "env": {"trading_base": cfg.trading_base, "auth_base": cfg.auth_base},
         "market": perp_market,
         "subject": {"address": subject_wallet.address, "mnemonic": subject_mnemonic},
-        "maker": {"address": maker_wallet.address, "access_token": maker_token},
+        # access_token is minted here but only lives 60s (this env's JWT TTL) -- by the time
+        # the Node test reaches matchRestingOrderWithApiCounterparty (after MetaMask onboarding
+        # + the full UI flow) it's long expired. private_key is saved so
+        # tools/refresh_e2e_maker_token.py can re-authenticate right before that call actually
+        # needs it, same as record_account() already does for other throwaway UAT wallets.
+        "maker": {"address": maker_wallet.address, "access_token": maker_token,
+                  "private_key": _sig_hex(maker_wallet.key)},
     }, indent=2))
     print(f"wrote {OUT}")
 

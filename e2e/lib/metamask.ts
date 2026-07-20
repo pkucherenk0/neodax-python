@@ -98,5 +98,8 @@ export type Arrangement = {
   env: { trading_base: string; auth_base: string };
   market: string;
   subject: { address: string; mnemonic: string };
-  maker: { address: string; access_token: string };
+  // private_key: this env's JWT TTL is 60s, so access_token (minted once, at arrangement
+  // time) is long expired by the time matchRestingOrderWithApiCounterparty needs it --
+  // that step re-authenticates just before use (see tools/refresh_e2e_maker_token.py).
+  maker: { address: string; access_token: string; private_key: string };
 };

@@ -7,10 +7,14 @@
  */
 import { expect } from '@playwright/test';
 import { BrowserContext, Page } from 'playwright-core';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { withOptionalApproval, Arrangement } from './metamask';
 
 const SCREENSHOT_DIR = path.resolve(__dirname, '../screenshots');
+const REPO_ROOT = path.resolve(__dirname, '../..');
+const ARRANGEMENT_PATH = path.resolve(__dirname, '../.arrangement.json');
 
 export async function takeScreenshot(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: `${SCREENSHOT_DIR}/${name}.png`, fullPage: true });
@@ -114,9 +118,16 @@ export async function matchRestingOrderWithApiCounterparty(arrangement: Arrangem
     throw new Error(`no bids in the live book to sweep (bids: ${JSON.stringify(book.bids)})`);
   }
 
+  // maker.access_token was minted at arrangement time (before MetaMask onboarding + the whole
+  // UI flow above), and this env's JWT TTL is 60s -- it's long expired by now. Re-authenticate
+  // right before use instead of trusting the stale one.
+  const python = path.join(REPO_ROOT, '.venv', 'bin', 'python3');
+  execFileSync(python, ['tools/refresh_e2e_maker_token.py'], { cwd: REPO_ROOT, stdio: 'inherit' });
+  const refreshed: Arrangement = JSON.parse(fs.readFileSync(ARRANGEMENT_PATH, 'utf-8'));
+
   const orderRes = await fetch(`${arrangement.env.trading_base}/perpetual/order`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', Authorization: `Bearer ${arrangement.maker.access_token}` },
+    headers: { 'content-type': 'application/json', Authorization: `Bearer ${refreshed.maker.access_token}` },
     body: JSON.stringify({
       app_session_id: arrangement.maker.address,
       market: arrangement.market,
