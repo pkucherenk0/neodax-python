@@ -18,7 +18,9 @@ export async function takeScreenshot(page: Page, name: string): Promise<void> {
 
 export async function openHomePage(page: Page, feBase: string): Promise<void> {
   await page.goto(feBase);
-  await expect(page.getByRole('button', { name: 'Connect' }).first()).toBeVisible();
+  // first render after navigation -- CI runners are slower than local dev (confirmed by the
+  // Deposit-link timeout below), give it real headroom, not the 5s locator default.
+  await expect(page.getByRole('button', { name: 'Connect' }).first()).toBeVisible({ timeout: 15000 });
   await takeScreenshot(page, '00-home-before-connect');
 }
 
@@ -29,7 +31,7 @@ export async function transferSpotBalanceToPerpetual(
   amount: string,
 ): Promise<void> {
   await page.goto(`${feBase}/assets`);
-  await expect(page.getByRole('button', { name: 'Transfer' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Transfer' })).toBeVisible({ timeout: 15000 });
   await takeScreenshot(page, '02-assets-before-transfer');
 
   await page.getByRole('button', { name: 'Transfer' }).click();
@@ -42,7 +44,7 @@ export async function transferSpotBalanceToPerpetual(
 export async function assertPerpetualBalanceContains(page: Page, feBase: string, expectedText: string): Promise<void> {
   await page.goto(`${feBase}/assets`);
   const perpetualTab = page.getByText('Perpetual', { exact: true }).first();
-  await expect(perpetualTab).toBeVisible();
+  await expect(perpetualTab).toBeVisible({ timeout: 15000 });
   await perpetualTab.click();
   await expect(page.getByText(expectedText, { exact: false }).first()).toBeVisible({ timeout: 10000 });
   await takeScreenshot(page, '03-perp-balance');
@@ -69,7 +71,7 @@ export async function placeRestingPerpLimitBuy(
 ): Promise<void> {
   await page.goto(`${feBase}/perps/${market.toLowerCase()}`);
   const limitTab = page.getByText('Limit', { exact: true }).first();
-  await expect(limitTab).toBeVisible();
+  await expect(limitTab).toBeVisible({ timeout: 15000 });
   await limitTab.click();
 
   const inputs = page.locator('input[type=text]');
