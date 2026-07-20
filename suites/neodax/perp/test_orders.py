@@ -6,7 +6,7 @@ cancels anything failed run left resting.
 """
 import pytest
 
-from configs.competition import perp_market, perp_trade
+from configs.competition import funding, perp_market, perp_trade
 from lib.perp import (
     cancel_perp_order,
     create_perp_order,
@@ -50,7 +50,25 @@ class TestPerpOrders:
         assert mark > 0, "perp mark price available"
         amount = size_amount(perp_trade.order_notional_usd, mark, mkt)
         rest_price = round_tick(mark * 0.95, mkt.tick_size, mkt.price_precision)
-        before = get_perp_balance_snapshot(account.trading_client, account.app_session_id)
+        # ground truth for the locked margin: a LIMIT order reserves exactly
+        # qty x price / leverage, no buffer (the 5% market-order slippage buffer doesn't
+        # apply to limit orders) and no fee (fee is checked for sufficiency but NOT included
+        # in the locked amount). confirmed against BE source:
+        # portfolio_manager_perp/grpc/account_service/converters.go CalculateInitialMargin
+        # (~L218-249) and lock_oneway.go/lock_hedge.go (lockedMargin passed to
+        # LockBalanceAmount, separate from feeToOpen); see also
+        # TestLockPerpAsset_LockMarginOnly_NotMarginPlusFee in lock_test.go.
+        reserved_margin = (float(amount) * float(rest_price)) / LEVERAGE
+        # the shared `account` fixture only confirms perp settled to >=90% of `funding.perp_usdt`
+        # (not the exact full amount) before handing the account back -- see the identical race
+        # documented in suites/neodax/spot/test_orders.py. settle "before" to the fixture's own
+        # known funded baseline first, rather than trusting whatever single read lands first.
+        expected_baseline = float(funding.perp_usdt)
+        before = poll_until(
+            lambda: get_perp_balance_snapshot(account.trading_client, account.app_session_id),
+            lambda snap: abs(snap.available - expected_baseline) < 1e-6, timeout_s=20,
+            message="perp collateral settled to its funded baseline before this test's own order",
+        )
 
         # act 1 — place the resting order, confirm it rests.
         order_uuid = step("place resting GTC limit buy 5% below mark",
@@ -66,6 +84,13 @@ class TestPerpOrders:
         mine = next(o for o in get_perp_open_orders(account.trading_client, account.app_session_id, mkt.market)
                     if o.order_id == order_uuid)
         record("resting order", mine.model_dump())
+        # the lock can trail the order becoming visible in open_orders by a beat -> poll for
+        # the exact expected lock (proven BE formula above), not a single read.
+        poll_until(
+            lambda: get_perp_balance_snapshot(account.trading_client, account.app_session_id).available,
+            lambda avail: abs(avail - (before.available - reserved_margin)) < 1e-6, timeout_s=15,
+            message="margin locked (matches the order's own notional / leverage)",
+        )
         during = get_perp_balance_snapshot(account.trading_client, account.app_session_id)
         in_history = any(o.order_id == order_uuid
                          for o in get_perp_orders(account.trading_client, account.app_session_id, mkt.market))
@@ -80,6 +105,11 @@ class TestPerpOrders:
                     "fill_amount": mine.fill_amount},
         )
         record_check(name="order also visible in /orders history", passed=in_history, detail={"inHistory": in_history})
+        record_check(
+            name="locked exactly the order's own margin (notional / leverage)",
+            passed=abs((before.available - during.available) - reserved_margin) < 1e-6,
+            detail={"before": before.available, "during": during.available, "reservedMargin": reserved_margin},
+        )
 
         # act 2 — cancel it. async, poll until it leaves open_orders.
         cancel = step("cancel the resting order",
@@ -89,16 +119,33 @@ class TestPerpOrders:
             lambda: any(o.order_id == order_uuid for o in get_perp_open_orders(account.trading_client, account.app_session_id, mkt.market)),
             lambda seen: not seen, timeout_s=15, message="cancelled order left open_orders",
         )
-        after = get_perp_balance_snapshot(account.trading_client, account.app_session_id)
+        # release target is `before` -- justified now that the lock itself was proven exact
+        # (reserved_margin == before - during above), so full release must land back on
+        # exactly `before`. generous timeout: this is the step that occasionally lags for
+        # real (not a design flaw, just genuine eventual-consistency). Capture the value
+        # poll_until itself confirmed -- a SEPARATE fresh read right after can hit a
+        # different backend replica/cache and observe a different number even though the
+        # poll already succeeded against a consistent one.
+        after_available = poll_until(
+            lambda: get_perp_balance_snapshot(account.trading_client, account.app_session_id).available,
+            lambda avail: abs(avail - before.available) < 1e-6, timeout_s=30,
+            message="margin released back after cancel (matches the locked margin)",
+        )
         record("balance around resting order", {"before": before.available, "duringAvailable": during.available,
-                                                "duringLocked": during.locked, "afterCancel": after.available})
-        record_check(name="available collateral restored after cancel",
-                     passed=abs(after.available - before.available) < 1e-6,
-                     detail={"before": before.available, "after": after.available})
+                                                "duringLocked": during.locked, "afterCancel": after_available,
+                                                "reservedMargin": reserved_margin})
+        record_check(name="released exactly the locked margin back",
+                     passed=abs(after_available - before.available) < 1e-6,
+                     detail={"before": before.available, "after": after_available})
 
-        # assert — resting shape was correct, and cancel released the reserved collateral.
+        # assert — resting shape was correct, lock/release both match the order's own known
+        # margin (independent oracle: the BE's own margin formula, not a guessed value).
         assert mine.type == "limit", "order is a limit"
         assert mine.state in RESTING_STATES, "order is in a resting state"
         assert float(mine.fill_amount or "0") == 0, "resting order is unfilled"
         assert in_history, "order appears in /orders history"
-        assert after.available == pytest.approx(before.available, abs=1e-6), "collateral restored after cancel"
+        locked = before.available - during.available
+        assert locked == pytest.approx(reserved_margin, abs=1e-6), \
+            f"resting order locked exactly its own margin (notional / leverage): expected {reserved_margin}, locked {locked}"
+        assert after_available == pytest.approx(before.available, abs=1e-6), \
+            f"collateral restored after cancel: expected {before.available}, got {after_available}"
