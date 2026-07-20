@@ -10,8 +10,9 @@ name: perp-spot-tests
 # orders on live UAT and spend real (throwaway UAT) balance on every push. That
 # was an explicit choice — see README.md "Safety rails" for what those markers
 # mean before changing this file. Also runs the real MetaMask e2e/ suite (its own
-# job, e2e-ui) for the same reason — deeper live-UAT confidence on every push,
-# same accounts-are-always-fresh rule as pr-check.yml's e2e-ui job.
+# job, e2e-ui) — but ONLY on pushes to main (see that job's `if:`), since
+# pr-check.yml already runs it (blocking) for PR-branch pushes, and running both
+# concurrently races two live-order sessions against the same thin shared market.
 
 on:
   push:
@@ -59,6 +60,12 @@ jobs:
           retention-days: 14
 
   e2e-ui:
+    # main only: pr-check.yml already runs this (blocking) for every PR-branch push. Both
+    # workflows trigger on the same commit, and running this job twice concurrently races
+    # two live-order browser sessions against the same thin shared UAT market -- one run's
+    # full-book counterparty sweep can consume the other run's still-resting order. Confirmed
+    # in practice: pr-check.yml's copy failed 3/3 times it ran concurrently with this one.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
