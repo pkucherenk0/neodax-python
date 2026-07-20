@@ -36,7 +36,11 @@ export async function bootstrapMetaMask(mnemonic: string): Promise<{ wallet: Dap
 }
 
 /** Click Connect -> MetaMask -> approve the connect popup -> approve its follow-up
- * signature request (same popup, navigates in place -- see file header). */
+ * signature request IF one shows up (same popup, navigates in place -- see file header).
+ * Whether the follow-up signature request happens is app/session-state dependent -- CI runs
+ * observed the popup sometimes closing right after the connect approval with no second step,
+ * where local dev runs always saw the two-step flow. Race both outcomes instead of assuming
+ * the popup stays open. */
 export async function connectMetaMask(page: Page, context: BrowserContext): Promise<void> {
   await page.getByRole('button', { name: 'Connect' }).first().click();
   await expect(page.getByText('MetaMask', { exact: true })).toBeVisible();
@@ -47,10 +51,18 @@ export async function connectMetaMask(page: Page, context: BrowserContext): Prom
   await popup.waitForLoadState();
 
   await popup.getByRole('button', { name: 'Connect' }).click();
-  await popup.waitForURL(/signature-request/, { timeout: 15000 });
-  await popup.getByRole('button', { name: 'Confirm' }).click();
 
-  await popup.waitForEvent('close', { timeout: 15000 }).catch(() => {});
+  await Promise.race([
+    popup.waitForEvent('close', { timeout: 15000 }).catch(() => {}),
+    popup.waitForURL(/signature-request/, { timeout: 15000 }).catch(() => {}),
+  ]);
+
+  if (!popup.isClosed()) {
+    // didn't close on its own -> the connect approval navigated to the follow-up signature
+    // request, which still needs confirming.
+    await popup.getByRole('button', { name: 'Confirm' }).click();
+    await popup.waitForEvent('close', { timeout: 15000 }).catch(() => {});
+  }
   await page.bringToFront();
 }
 
