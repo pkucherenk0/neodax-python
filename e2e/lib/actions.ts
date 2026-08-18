@@ -55,6 +55,27 @@ export async function dismissWhatsNewModalIfPresent(page: Page, stepLabel: strin
   }
 }
 
+export async function clickRobustToModalRace(page: Page, target: Locator, timeout = 8000): Promise<void> {
+  // known-issue spot, confirmed live via a CI trace: "What's new" (and "Welcome") can appear
+  // with a DELAY after page load -- a one-shot "check for it, then click" has a real gap where
+  // the modal renders AFTER the check finds nothing and BEFORE the click lands, blocking it.
+  // Caught directly: dismissWhatsNewModalIfPresent ran immediately after page.goto('/assets')
+  // and found nothing, then the Transfer click hung for the full 10-minute test timeout on a
+  // "What's new" backdrop that rendered in that gap. A plain retry on the click alone can't
+  // fix this -- Playwright's own auto-retry waits for the element to become clickable, it has
+  // no notion of dismissing an unrelated overlay for us. Try the click with a short bounded
+  // timeout; if that's what's actually blocking it, dismiss both known modals and retry once
+  // -- bounded, so a genuine failure surfaces in seconds, not after riding the whole test
+  // timeout the way this one did.
+  try {
+    await target.click({ timeout });
+  } catch (err) {
+    await dismissWelcomeModalIfPresent(page);
+    await dismissWhatsNewModalIfPresent(page, 'race-retry');
+    await target.click({ timeout });
+  }
+}
+
 export async function refreshTransferFromBalanceViaDirectionToggle(dialog: Locator): Promise<void> {
   // WORKAROUND for a known UAT FE bug: the Transfer dialog's "Transfer from" balance can be
   // stale on open -- the Transfer button silently stays rejected/disabled even though the
@@ -100,7 +121,7 @@ export async function transferSpotBalanceToPerpetual(
   await expect(page.getByRole('button', { name: 'Transfer' })).toBeVisible({ timeout: 15000 });
   await takeScreenshot(page, '02-assets-before-transfer');
 
-  await page.getByRole('button', { name: 'Transfer' }).click();
+  await clickRobustToModalRace(page, page.getByRole('button', { name: 'Transfer' }));
   // the "What's new" modal isn't just a one-time thing at connect -- confirmed re-appearing
   // right after THIS click too (unrelated re-trigger, not a leftover). Dismiss it again in
   // case it raced this click, and exclude it from the dialog match regardless of timing so a
