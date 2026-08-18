@@ -56,7 +56,8 @@ No assertions in the Arrange section. No new actions in the Assert section.
 Mark every test class with exactly one lane:
 - `stateless` — independent, parallel-safe, no funding, no trades. **Default. Prefer this.**
 - `trades`    — places real orders. NO retries ever. Run deliberately (`-m trades`).
-- `serial`    — ordered flow; one process, phases share module state.
+- `serial`    — ordered flow, phases share module state. xdist-safe: give the class
+  `@pytest.mark.xdist_group(name=...)` so it stays on one worker, in order (`--dist loadgroup`).
 Tests never depend on another test's side effects **except** within a single `serial` class.
 
 ## 8. Safety rails (fixed — money is real)
@@ -140,6 +141,32 @@ padding the deposit or retrying. If you see `insufficient_margin` with a suspici
 `Available: 0` right after opening an unrelated position, dump the FULL account
 (`get_perp_account`, not just `get_perp_balance_snapshot`) before assuming it's a timing bug —
 `total_unrealized_pnl` will tell you immediately whether a real price move is the cause.
+
+**UAT perp market allocation (mark-injection collisions).** `lib/mark_price.py`'s
+`simulate_mark_price` is **market-wide** — it can liquidate every account holding a position on
+that market, not just the test's own. Two mark-injecting tests sharing a market (even in
+separate CI runs on different branches — confirmed live: this happened) corrupt each other with
+bogus failures (`assert 0 > 0`, poll timeouts) that look like real bugs but aren't. Live UAT has
+10 perp markets (`GET /perpetual/exchangeInfo`, all with an identical risk-tier ladder except
+BTC — a market swap needs no sizing-config changes), BUT the risk-tier ladder alone does NOT
+mean a market is actually open for trading — confirmed live, `XRPUSDT-PERP`, `TAOUSDT-PERP`, and
+`1000PEPEUSDT-PERP` all reject every new order with `400 mark_price_quality_restricted`
+("opening orders temporarily disabled during mark price safe mode"), and `SOLUSDT-PERP` rejects
+with `400 mark_price_unavailable` — both look like a live oracle-feed/circuit-breaker state on
+markets this repo has never touched before, not something visible from `exchangeInfo`. Verify
+any new market with a real order attempt (small, disposable account) before wiring it into a
+test, not just a risk-tier-ladder check. Current allocation:
+- **Reserved, never inject:** `BTCUSDT-PERP` (default `perp_market`, most of the Trades lane +
+  `e2e/`'s resting order), `ETHUSDT-PERP` (spot's `test_trade.py` reads its mark as a fallback
+  reference price — injecting it leaks into the spot suite).
+- **In use for injection, confirmed live:** `SUIUSDT-PERP` + `DOGEUSDT-PERP`
+  (`test_liquidation_takeover.py`'s long/short legs), `BNBUSDT-PERP`
+  (`test_tiered_reduction.py`'s piecewise test), `LINKUSDT-PERP`
+  (`test_tiered_reduction.py`'s TC-LIQ-030 test).
+- **Confirmed NOT usable right now** (oracle safe-mode / mark unavailable, as of 2026-08-18):
+  `XRPUSDT-PERP`, `TAOUSDT-PERP`, `1000PEPEUSDT-PERP`, `SOLUSDT-PERP`. Re-check live before
+  reusing any of these — this may be a transient UAT state, not permanent.
+Adding a new mark-injecting test? Confirm a candidate market live first, then update this note.
 
 ## The canonical shape
 See **`suites/TEMPLATE_template.py`** (copy it) and the live reference

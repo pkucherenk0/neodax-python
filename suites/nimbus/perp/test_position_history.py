@@ -141,6 +141,7 @@ def _flatten_after(account, perp_maker):
 
 
 @pytest.mark.serial
+@pytest.mark.xdist_group(name="position_history")  # test_2 reads a position test_1 resolved
 @pytest.mark.usefixtures("_flatten_after")
 class TestPerpPositionHistoryLifecycle:
     @pytest.mark.timeout(300)  # first use of account do faucet + transfer + enroll

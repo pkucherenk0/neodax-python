@@ -37,8 +37,11 @@ def long_size(positions) -> float:
     return sum(float(p.amount) for p in positions if p.direction == "long")
 
 
-# module state so teardown restores the injected mark even if the test throws (blast-radius safety).
-state: dict = {"restore": None}
+# module state: teardown restores every injected mark even if a test throws (blast-radius
+# safety). LIST, not a single dict -- test_1 and test_2 run on separate markets (see
+# configs.competition.TieredReductionCfg), so both entries must survive to teardown even if
+# one test crashes before its own inline restore and the other overwrites this after it.
+state: dict = {"restore": []}
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -48,7 +51,8 @@ def _restore_mark(env_cfg, clients):
         return
     faucet = clients.make(env_cfg.faucet_url).client if env_cfg.faucet_url else None
     if faucet:
-        restore_mark_price(faucet, state["restore"]["market"], state["restore"]["mark"])
+        for r in state["restore"]:
+            restore_mark_price(faucet, r["market"], r["mark"])
 
 
 def _open_long_vs_maker(subject, maker, mkt, notional_usd: float, leverage: int) -> tuple[float, float]:
@@ -90,9 +94,9 @@ class TestPerpTieredPositionReduction:
         mkt = resolve_perp_market(subject.trading_client, cfg.market)
         mark = get_perp_mark_price(subject.trading_client, mkt.market)
         assert mark > 0, "mark price available"
-        state["restore"] = {"market": mkt.market, "mark": str(mark)}
+        state["restore"].append({"market": mkt.market, "mark": str(mark)})
 
-        # open notional must reach tier 3+ so several 1-tier reductions can happen (SUI: > tier-2 cap 250k).
+        # open notional must reach tier 3+ so several 1-tier reductions can happen (> tier-2 cap 250k).
         tiers = get_market_risk_tiers(subject.trading_client, mkt.market)
         assert len(tiers) >= 3, "multi-tier ladder"
         assert cfg.open_notional_usd > tiers[1].max_notional_quote, "open notional reaches tier 3+ (multiple pieces possible)"
@@ -178,10 +182,10 @@ class TestPerpTieredPositionReduction:
         maker = step("provision maker", lambda: new_funded_account(
             spot_usdt=cfg.maker_deposit_usdt, perp_usdt=cfg.maker_deposit_usdt, role="liq1-maker"))
 
-        mkt = resolve_perp_market(subject.trading_client, cfg.market)
+        mkt = resolve_perp_market(subject.trading_client, cfg.one_tier_market)
         mark = get_perp_mark_price(subject.trading_client, mkt.market)
         assert mark > 0, "mark price available"
-        state["restore"] = {"market": mkt.market, "mark": str(mark)}
+        state["restore"].append({"market": mkt.market, "mark": str(mark)})
 
         tiers = get_market_risk_tiers(subject.trading_client, mkt.market)
         tier1_cap = tiers[0].max_notional_quote  # reduce target: tier-1 upper limit

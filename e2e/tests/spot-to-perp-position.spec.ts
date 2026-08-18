@@ -2,17 +2,21 @@
  * Visual e2e: spot -> perp transfer, perp limit order via the real UI, matched by a
  * counterparty order placed via a raw API call, position visually confirmed.
  *
- * User 1 (this test, real UI via MetaMask/dappwright) rests a limit order; User 2 (separate
+ * User 1 (this test, real UI via a mock EIP-1193 wallet) rests a limit order; User 2 (separate
  * funded account, API-only) crosses it; we confirm the resulting position renders in User 1's
- * UI. Needs a real MetaMask connection (see ../README.md for why). Arrangement (funded
- * accounts) comes from ../.arrangement.json, generated fresh each run by global-setup.ts.
+ * UI. Needs a genuinely connected wallet -- a plain JWT-in-localStorage session can't get past
+ * this app's wallet-connect gate (Reown AppKit/wagmi): Open Long/Short stays disabled and Open
+ * Orders/Positions shows "Connect Wallet to Start" even with a valid, working JWT. See
+ * ../lib/wallet.ts for how the connection is established (no real MetaMask, no popups) and
+ * ../lib/actions.ts for what each step below actually does.
+ *
+ * Arrangement (funded accounts) comes from ../.arrangement.json, generated fresh each run by
+ * global-setup.ts.
  */
 import { test as base } from '@playwright/test';
-import { BrowserContext } from 'playwright-core';
-import { Dappwright } from '@tenkeylabs/dappwright';
 import fs from 'node:fs';
 import path from 'node:path';
-import { Arrangement, bootstrapMetaMask, connectMetaMask } from '../lib/metamask';
+import { Arrangement, installWalletFor } from '../lib/wallet';
 import {
   assertOrderVisibleInOpenOrders,
   assertPerpetualBalanceContains,
@@ -26,6 +30,7 @@ import {
   placeRestingPerpLimitBuy,
   takeScreenshot,
   transferSpotBalanceToPerpetual,
+  waitForWalletConnected,
 } from '../lib/actions';
 
 const ARRANGEMENT_PATH = path.resolve(__dirname, '../.arrangement.json');
@@ -53,43 +58,33 @@ function loadArrangement(): Arrangement {
 }
 
 const arrangement = loadArrangement();
-
-const test = base.extend<{ wallet: Dappwright; walletContext: BrowserContext }>({
-  walletContext: async ({}, use) => {
-    const { context } = await bootstrapMetaMask(arrangement.subject.mnemonic);
-    await use(context);
-    await context.close();
-  },
-  wallet: async ({ walletContext }, use) => {
-    const { getWallet } = await import('@tenkeylabs/dappwright');
-    await use(await getWallet('metamask', walletContext));
-  },
-});
+const test = base;
 
 test.beforeAll(() => {
   fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
 });
 
 test('spot to perp transfer, UI limit order matched by API counterparty, position visible', async ({
-  walletContext,
+  page,
 }) => {
-  const context = walletContext;
-  const page = await context.newPage();
   const marketBase = arrangement.market.replace(/-PERP$/, ''); // table/row displays drop "-PERP"
 
+  // must install before the first navigation -- addInitScript only takes effect on next load.
+  await installWalletFor(page, arrangement.subject.mnemonic);
+
   await openHomePage(page, FE_BASE);
-  await connectMetaMask(page, context);
+  await waitForWalletConnected(page);
   // two modals in a row for a fresh account -- dismiss both, see ../README.md.
   await dismissWelcomeModalIfPresent(page);
   await dismissWhatsNewModalIfPresent(page, '01b');
   await takeScreenshot(page, '01-connected');
 
-  await transferSpotBalanceToPerpetual(page, context, FE_BASE, '20000');
+  await transferSpotBalanceToPerpetual(page, FE_BASE, '20000');
   await assertPerpetualBalanceContains(page, FE_BASE, '20,000');
 
   const mark = await fetchLiveMarkPrice(arrangement);
   const restPrice = (mark * 0.9).toFixed(2); // 10% below mark -> rests, doesn't fill on its own
-  await placeRestingPerpLimitBuy(page, context, FE_BASE, arrangement.market, restPrice, '0.01');
+  await placeRestingPerpLimitBuy(page, FE_BASE, arrangement.market, restPrice, '0.01');
 
   // resting order now exists on a shared live book -- cancel on any throw, don't leave trash.
   try {
@@ -97,6 +92,6 @@ test('spot to perp transfer, UI limit order matched by API counterparty, positio
     await matchRestingOrderWithApiCounterparty(arrangement);
     await assertPositionVisibleInUi(page, marketBase);
   } finally {
-    await cancelAnyOpenOrder(page, context);
+    await cancelAnyOpenOrder(page);
   }
 });

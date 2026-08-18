@@ -4,9 +4,10 @@ Two-layer test harness for Nimbus:
 - **API integration** (`suites/`, `tests/unit/`) — **pytest + Playwright in API mode** (no
   browser), with response-shape validation via [pydantic](https://docs.pydantic.dev). Domain
   logic lives in `lib/`; specs are thin **Arrange → Act → Assert** wrappers.
-- **UI e2e** (`e2e/`) — a separate Node/Playwright project driving the real FE through a real
-  MetaMask wallet (dappwright). Lives outside the Python suite because dappwright (real
-  extension automation) only exists in Node. See `e2e/README` / `AGENTS.md` for why and how.
+- **UI e2e** (`e2e/`) — a separate Node/Playwright project driving the real FE through a mock
+  EIP-1193 wallet (`@johanneskares/wallet-mock`, real signatures, no browser extension). Lives
+  outside the Python suite because it needs a real browser. See `e2e/README` / `AGENTS.md` for
+  why and how.
 
 > ⚠️ **These tests hit live environments and can spend real balance.** Read the safety rails
 > below and in [`AGENTS.md`](./AGENTS.md) before running anything that trades.
@@ -56,9 +57,10 @@ Env is chosen with `--env`:
 - `stateless` — independent, parallel-safe, no funding. **Default; prefer this.**
 - `smoke` — connectivity/health, fail-fast.
 - `trades` — places real orders; no retries ever.
-- `serial` — ordered flows (fee-tier, position lifecycle, liquidation); one process.
+- `serial` — ordered flows (fee-tier, position lifecycle, liquidation); xdist-safe, ordered
+  classes carry `@pytest.mark.xdist_group` (`-n N --dist loadgroup`).
 
-UI e2e tests (real MetaMask, real FE) are a separate Node project — see `e2e/`, not a pytest marker.
+UI e2e tests (mock wallet, real FE) are a separate Node project — see `e2e/`, not a pytest marker.
 
 ## Test validity — making sure a test can actually FAIL (anti-false-positive)
 
@@ -94,9 +96,10 @@ tests/unit/   offline unit tests for pure lib math (run first)
 tools/        red_green.py (anti-false-positive) + api_coverage.py (endpoint registry × tests)
               + arrange_metamask_e2e.py (funds accounts for e2e/, see below)
 
-e2e/          SEPARATE Node/Playwright project — UI e2e via a real MetaMask wallet (dappwright).
-              lib/metamask.ts (connect/approve), lib/actions.ts (named page actions), tests/.
-              Not pytest — `cd e2e && npx playwright test`. See e2e/README or AGENTS.md.
+e2e/          SEPARATE Node/Playwright project — UI e2e via a mock EIP-1193 wallet, no real
+              MetaMask extension. lib/wallet.ts (mock wallet install), lib/actions.ts (named
+              page actions), tests/. Not pytest — `cd e2e && npx playwright test`. See e2e/README
+              or AGENTS.md.
 ```
 
 ## Contributing
