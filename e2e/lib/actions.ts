@@ -6,7 +6,7 @@
  * this repo's Python lib/ + suites/ already use.
  */
 import { expect } from '@playwright/test';
-import { BrowserContext, Page } from 'playwright-core';
+import { BrowserContext, Locator, Page } from 'playwright-core';
 import path from 'node:path';
 import { withOptionalApproval, Arrangement } from './metamask';
 
@@ -24,6 +24,92 @@ export async function openHomePage(page: Page, feBase: string): Promise<void> {
   await takeScreenshot(page, '00-home-before-connect');
 }
 
+export async function dismissWelcomeModalIfPresent(page: Page): Promise<void> {
+  // brand-new accounts get a first-time "Welcome to Yellow Pro" onboarding modal -- separate
+  // from, and appearing BEFORE, the "What's new" release modal below. It shows up with a
+  // delay (confirmed: not there immediately after connect, present ~3s later), and has no
+  // "Got it" button -- its own CTA is "Start trading". Best-effort: no-op if not showing.
+  // known-issue spot -- screenshot when actually caught, not just at the surrounding step's
+  // usual checkpoints, so a report shows what the modal looked like, not just whatever page
+  // state came after it stopped blocking things.
+  const startTrading = page.getByRole('button', { name: 'Start trading' });
+  if (await startTrading.isVisible({ timeout: 5000 }).catch(() => false)) {
+    await takeScreenshot(page, '01a-welcome-modal-present');
+    await startTrading.click();
+    await expect(startTrading).not.toBeVisible({ timeout: 5000 }).catch(() => {});
+  }
+}
+
+export async function dismissWhatsNewModalIfPresent(page: Page, stepLabel: string): Promise<void> {
+  // every FRESH wallet (this test mints a new one each run, see tools/arrange_metamask_e2e.py)
+  // gets a one-time "What's new" release modal on first authenticated render. It sits on top
+  // of the page and blocks clicks underneath it -- e.g. the Transfer button on /assets. Also
+  // confirmed re-appearing right after clicking Transfer (a second, later call site) -- NOT
+  // just a one-time thing at connect. `stepLabel` disambiguates the screenshot between call
+  // sites; best-effort, no-op if it's not showing.
+  const gotIt = page.getByRole('button', { name: 'Got it' });
+  if (await gotIt.isVisible({ timeout: 5000 }).catch(() => false)) {
+    await takeScreenshot(page, `${stepLabel}-whats-new-modal-present`);
+    await gotIt.click();
+    await expect(gotIt).not.toBeVisible({ timeout: 5000 }).catch(() => {});
+  }
+}
+
+export async function clickRobustToModalRace(page: Page, target: Locator, timeout = 8000): Promise<void> {
+  // known-issue spot, confirmed live via a CI trace: "What's new" (and "Welcome") can appear
+  // with a DELAY after page load -- a one-shot "check for it, then click" has a real gap where
+  // the modal renders AFTER the check finds nothing and BEFORE the click lands, blocking it.
+  // Caught directly: dismissWhatsNewModalIfPresent ran immediately after page.goto('/assets')
+  // and found nothing, then the Transfer click hung for the full 10-minute test timeout on a
+  // "What's new" backdrop that rendered in that gap. A plain retry on the click alone can't
+  // fix this -- Playwright's own auto-retry waits for the element to become clickable, it has
+  // no notion of dismissing an unrelated overlay for us. Try the click with a short bounded
+  // timeout; if that's what's actually blocking it, dismiss both known modals and retry once
+  // -- bounded, so a genuine failure surfaces in seconds, not after riding the whole test
+  // timeout the way this one did.
+  try {
+    await target.click({ timeout });
+  } catch (err) {
+    await dismissWelcomeModalIfPresent(page);
+    await dismissWhatsNewModalIfPresent(page, 'race-retry');
+    await target.click({ timeout });
+  }
+}
+
+export async function refreshTransferFromBalanceViaDirectionToggle(dialog: Locator): Promise<void> {
+  // WORKAROUND for a known UAT FE bug: the Transfer dialog's "Transfer from" balance can be
+  // stale on open -- the Transfer button silently stays rejected/disabled even though the
+  // account genuinely has the funds (confirmed independently: same balance visible in the UI,
+  // correct via GET /spot/account, and the identical transfer succeeds instantly via POST
+  // /accounts/transfer -- this is FE-only, not a real balance issue). Toggling the "Transfer
+  // from" selector away and back forces a refetch that picks up the real balance.
+  //
+  // the picker shows as a NESTED [role=dialog] in the ARIA SNAPSHOT, but that reflects the
+  // accessibility tree, not necessarily DOM containment -- it may render via a portal outside
+  // `dialog`'s actual DOM subtree. Scope it at the PAGE level instead, disambiguated by
+  // content (no "What's new" / "Transfer funds" text) so it resolves regardless of where in
+  // the DOM it actually lives.
+  // explicit timeouts throughout -- a bad locator here must fail fast, not silently ride the
+  // whole 600s test timeout.
+  const timeout = 10_000;
+  const page = dialog.page();
+  const picker = page.locator('[role=dialog]')
+    .filter({ hasNotText: "What's new" })
+    .filter({ hasNotText: 'Transfer funds' });
+
+  // known-issue spot -- this whole sequence previously had ZERO screenshot coverage (jumped
+  // straight from '02-assets-before-transfer' to '03-perp-balance'), so any failure here left
+  // nothing useful to inspect afterward. Screenshot after every click.
+  await dialog.getByRole('button', { name: 'Spot Account' }).click({ timeout });
+  await takeScreenshot(page, '02c-transfer-from-picker-open');
+  await picker.getByRole('button', { name: 'Perpetuals Account' }).click({ timeout }); // swap away
+  await takeScreenshot(page, '02d-transfer-swapped-away');
+  await dialog.getByRole('button', { name: 'Perpetuals Account' }).click({ timeout }); // reopen (now the From trigger)
+  await takeScreenshot(page, '02e-transfer-from-picker-reopened');
+  await picker.getByRole('button', { name: 'Spot Account' }).click({ timeout }); // swap back -> Spot -> Perpetual, refetched
+  await takeScreenshot(page, '02f-transfer-swapped-back');
+}
+
 export async function transferSpotBalanceToPerpetual(
   page: Page,
   context: BrowserContext,
@@ -31,14 +117,27 @@ export async function transferSpotBalanceToPerpetual(
   amount: string,
 ): Promise<void> {
   await page.goto(`${feBase}/assets`);
+  await dismissWhatsNewModalIfPresent(page, '02-assets');
   await expect(page.getByRole('button', { name: 'Transfer' })).toBeVisible({ timeout: 15000 });
   await takeScreenshot(page, '02-assets-before-transfer');
 
-  await page.getByRole('button', { name: 'Transfer' }).click();
-  const dialog = page.locator('[role=dialog]').first();
-  await dialog.locator('input').first().fill(amount);
-  await withOptionalApproval(page, context, () => dialog.getByRole('button', { name: 'Transfer' }).click());
-  await expect(page.locator('[role=dialog]')).toHaveCount(0);
+  await clickRobustToModalRace(page, page.getByRole('button', { name: 'Transfer' }));
+  // the "What's new" modal isn't just a one-time thing at connect -- confirmed re-appearing
+  // right after THIS click too (unrelated re-trigger, not a leftover). Dismiss it again in
+  // case it raced this click, and exclude it from the dialog match regardless of timing so a
+  // future re-appearance can never get mistaken for the real Transfer dialog again.
+  await dismissWhatsNewModalIfPresent(page, '02a-post-transfer-click');
+  const dialog = page.locator('[role=dialog]').filter({ hasNotText: "What's new" }).first();
+  await expect(dialog).toBeVisible({ timeout: 10000 });
+  await takeScreenshot(page, '02b-transfer-dialog-open');
+
+  await refreshTransferFromBalanceViaDirectionToggle(dialog);
+
+  await dialog.locator('input').first().fill(amount, { timeout: 10000 });
+  await takeScreenshot(page, '02g-transfer-amount-filled');
+  await withOptionalApproval(page, context, () => dialog.getByRole('button', { name: 'Transfer' }).click({ timeout: 10000 }));
+  await takeScreenshot(page, '02h-transfer-submitted');
+  await expect(page.locator('[role=dialog]')).toHaveCount(0, { timeout: 15000 });
 }
 
 export async function assertPerpetualBalanceContains(page: Page, feBase: string, expectedText: string): Promise<void> {
@@ -74,7 +173,27 @@ export async function placeRestingPerpLimitBuy(
   await expect(limitTab).toBeVisible({ timeout: 15000 });
   await limitTab.click();
 
+  // known-issue spot -- nth(0)/nth(1) below assumes a FIXED field order (price then size).
+  // The FE has changed its modals/dialogs more than once this session; if it ever reorders
+  // this form too, we'd silently fill the wrong fields with plausible-looking numbers instead
+  // of failing loudly. Log + screenshot the actual field set every run so a "bad input"
+  // symptom is diagnosable from the report alone, not just a rerun.
   const inputs = page.locator('input[type=text]');
+  const n = await inputs.count();
+  console.log(`--- ORDER FORM: ${n} input[type=text] elements ---`);
+  for (let i = 0; i < n; i++) {
+    const el = inputs.nth(i);
+    const [name, placeholder, value, ariaLabel] = await Promise.all([
+      el.getAttribute('name'),
+      el.getAttribute('placeholder'),
+      el.inputValue(),
+      el.getAttribute('aria-label'),
+    ]);
+    console.log(`  [${i}] name=${name} placeholder=${placeholder} value=${JSON.stringify(value)} aria-label=${ariaLabel}`);
+  }
+  console.log('--- END ---');
+  await takeScreenshot(page, '04-order-form-before-fill');
+
   await inputs.nth(0).fill(price);
   await inputs.nth(1).fill(size);
   await takeScreenshot(page, '04-order-form-filled');

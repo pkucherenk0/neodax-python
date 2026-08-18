@@ -1,4 +1,4 @@
-"""smoke. fail fast. port of suites/health.spec.ts.
+"""smoke. fail fast.
 
 env unreachable / misconfigured -> downstream suites fail confusing. this fail first, clear.
 """

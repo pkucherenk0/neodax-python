@@ -1,5 +1,4 @@
-"""wires the fixtures/ package into pytest + top-level CLI/run-lifecycle hooks. port of
-fixtures/index.ts + globalSetup.ts.
+"""wires the fixtures/ package into pytest + top-level CLI/run-lifecycle hooks.
 
 specs get accounts, JWTs, and API clients from fixtures/ — never construct wallets or
 request contexts inline in a spec (CONVENTIONS §4). env is chosen with --env=uat|stage.

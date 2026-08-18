@@ -18,6 +18,11 @@ jobs:
   safe-lane:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      NIMBUS_UAT_BASE: ${{ secrets.NIMBUS_UAT_BASE }}
+      NIMBUS_UAT_AUTH_BASE: ${{ secrets.NIMBUS_UAT_AUTH_BASE }}
+      NIMBUS_UAT_TRADING_BASE: ${{ secrets.NIMBUS_UAT_TRADING_BASE }}
+      NIMBUS_UAT_FAUCET_URL: ${{ secrets.NIMBUS_UAT_FAUCET_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -30,11 +35,17 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Safe lane (stateless + smoke, default addopts)
-        run: pytest suites/neodax/perp suites/neodax/spot
+        run: pytest suites/nimbus/perp suites/nimbus/spot
 
   e2e-ui:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      NIMBUS_UAT_BASE: ${{ secrets.NIMBUS_UAT_BASE }}
+      NIMBUS_UAT_AUTH_BASE: ${{ secrets.NIMBUS_UAT_AUTH_BASE }}
+      NIMBUS_UAT_TRADING_BASE: ${{ secrets.NIMBUS_UAT_TRADING_BASE }}
+      NIMBUS_UAT_FAUCET_URL: ${{ secrets.NIMBUS_UAT_FAUCET_URL }}
+      NIMBUS_FE_BASE: ${{ secrets.NIMBUS_FE_BASE }}
     steps:
       - uses: actions/checkout@v4
 
@@ -67,11 +78,17 @@ jobs:
         working-directory: e2e
         run: xvfb-run --auto-servernum npm test
 
-      - name: Upload e2e screenshots
+      - name: Upload e2e artifacts (screenshots + failure traces)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-screenshots-${{ github.run_id }}
-          path: e2e/screenshots
+          name: e2e-artifacts-${{ github.run_id }}
+          # e2e/screenshots: our named takeScreenshot() checkpoints. e2e/test-results:
+          # Playwright's own auto-screenshot + full trace (playwright.config.ts:
+          # screenshot/trace 'on-failure') -- covers a failure ANYWHERE, not just the steps
+          # we thought to instrument. `npx playwright show-trace <trace.zip>` replays it.
+          path: |
+            e2e/screenshots
+            e2e/test-results
           if-no-files-found: ignore
           retention-days: 14

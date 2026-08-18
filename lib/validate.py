@@ -1,7 +1,7 @@
 """parse response body, validate against pydantic schema, return typed data.
 
-port of lib/validate.ts (zod -> pydantic). on mismatch raise readable error (which field,
-expected vs got, plus raw body) so failing contract test point straight at drift.
+on mismatch raise readable error (which field, expected vs got, plus raw body) so a failing
+contract test points straight at the drift.
 """
 from __future__ import annotations
 

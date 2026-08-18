@@ -1,4 +1,4 @@
-"""perp leverage-based tiered margin (YEN-2544). port of lib/risk-tiers.ts.
+"""perp leverage-based tiered margin (PERP-2544).
 
 GET /perpetual/market-risk-tiers returns, per market, ladder of risk tiers. tier a position
 sits in chosen by position QUOTE NOTIONAL (|base| x mark price). tier fixes max leverage /

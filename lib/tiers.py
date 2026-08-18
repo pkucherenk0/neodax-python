@@ -1,4 +1,4 @@
-"""competition fee schedule + pure tier math. port of lib/tiers.ts."""
+"""competition fee schedule + pure tier math."""
 from __future__ import annotations
 
 from urllib.parse import quote
@@ -35,7 +35,7 @@ def competition_to_tiers(comp: CompetitionSchedule) -> list[Tier] | None:
             spot_taker=_bps(t.spot_taker_bps),
             spot_maker=_bps(t.spot_maker_bps),
             vol_min=float(t.campaign_volume_req_usd),
-            yellow_min=float(t.campaign_yellow_req or "0") or 0.0,
+            nim_min=float(t.campaign_nim_req or "0") or 0.0,
         )
         for t in ft
     ]
@@ -53,13 +53,13 @@ def expected_comp_tier(tiers: list[Tier], cum_vol: float) -> Tier:
     return current
 
 
-def expected_tier_either(tiers: list[Tier], vol: float, yellow: float) -> Tier:
+def expected_tier_either(tiers: list[Tier], vol: float, nim: float) -> Tier:
     """either-threshold qualification: highest tier met by EITHER campaign volume OR
-    24h-average YELLOW balance. why holding enough YELLOW can qualify tier with no volume."""
+    24h-average NIM balance. why holding enough NIM can qualify tier with no volume."""
     if not tiers:
         raise ValueError("expected_tier_either: empty tier schedule")
     current = tiers[0]
     for t in tiers:
-        if vol >= t.vol_min or yellow >= t.yellow_min:
+        if vol >= t.vol_min or nim >= t.nim_min:
             current = t
     return current

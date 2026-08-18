@@ -1,7 +1,7 @@
 name: perp-spot-tests
 
-# Runs the neodax perp/spot API suites against live UAT on every push (any branch).
-# See suites/neodax/perp, suites/neodax/spot. Not the PR merge gate — that's
+# Runs the nimbus perp/spot API suites against live UAT on every push (any branch).
+# See suites/nimbus/perp, suites/nimbus/spot. Not the PR merge gate — that's
 # pr-check.yml (fast, safe-lane only). This one also covers PR branches via `push`
 # (any commit pushed to a PR's branch triggers this too), so there's no separate
 # pull_request trigger here — that would just double-run the same commit.
@@ -27,6 +27,11 @@ jobs:
   perp-spot:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      NIMBUS_UAT_BASE: ${{ secrets.NIMBUS_UAT_BASE }}
+      NIMBUS_UAT_AUTH_BASE: ${{ secrets.NIMBUS_UAT_AUTH_BASE }}
+      NIMBUS_UAT_TRADING_BASE: ${{ secrets.NIMBUS_UAT_TRADING_BASE }}
+      NIMBUS_UAT_FAUCET_URL: ${{ secrets.NIMBUS_UAT_FAUCET_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -37,24 +42,24 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
-        # No `playwright install` here: suites/neodax/perp and suites/neodax/spot
+        # No `playwright install` here: suites/nimbus/perp and suites/nimbus/spot
         # use Playwright's request context (pure HTTP, no browser). Browsers are
         # only needed for the e2e/ suite, run separately by the e2e-ui job below.
 
       - name: Safe lane (stateless + smoke, default addopts)
-        run: pytest suites/neodax/perp suites/neodax/spot
+        run: pytest suites/nimbus/perp suites/nimbus/spot
 
       - name: Trades lane (places real orders on UAT)
-        run: pytest -m trades suites/neodax/perp suites/neodax/spot
+        run: pytest -m trades suites/nimbus/perp suites/nimbus/spot
 
       - name: Serial lane (ordered flow, one process, no retries/cache)
-        run: pytest -m serial -p no:cacheprovider suites/neodax/perp suites/neodax/spot
+        run: pytest -m serial -p no:cacheprovider suites/nimbus/perp suites/nimbus/spot
 
       - name: Upload run artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: neodax-results-${{ github.run_id }}
+          name: nimbus-results-${{ github.run_id }}
           path: results/latest
           if-no-files-found: ignore
           retention-days: 14
@@ -68,6 +73,12 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      NIMBUS_UAT_BASE: ${{ secrets.NIMBUS_UAT_BASE }}
+      NIMBUS_UAT_AUTH_BASE: ${{ secrets.NIMBUS_UAT_AUTH_BASE }}
+      NIMBUS_UAT_TRADING_BASE: ${{ secrets.NIMBUS_UAT_TRADING_BASE }}
+      NIMBUS_UAT_FAUCET_URL: ${{ secrets.NIMBUS_UAT_FAUCET_URL }}
+      NIMBUS_FE_BASE: ${{ secrets.NIMBUS_FE_BASE }}
     steps:
       - uses: actions/checkout@v4
 
@@ -100,11 +111,17 @@ jobs:
         working-directory: e2e
         run: xvfb-run --auto-servernum npm test
 
-      - name: Upload e2e screenshots
+      - name: Upload e2e artifacts (screenshots + failure traces)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-screenshots-push-${{ github.run_id }}
-          path: e2e/screenshots
+          name: e2e-artifacts-push-${{ github.run_id }}
+          # e2e/screenshots: our named takeScreenshot() checkpoints. e2e/test-results:
+          # Playwright's own auto-screenshot + full trace (playwright.config.ts:
+          # screenshot/trace 'on-failure') -- covers a failure ANYWHERE, not just the steps
+          # we thought to instrument. `npx playwright show-trace <trace.zip>` replays it.
+          path: |
+            e2e/screenshots
+            e2e/test-results
           if-no-files-found: ignore
           retention-days: 14

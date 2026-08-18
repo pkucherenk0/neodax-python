@@ -2,9 +2,9 @@
 
 grug list. `@stateless` = no money. `@trades` = real order. `@serial` = ordered, share volume. see [index](../../TEST_CASES.md).
 
-perp api (greenfield). suites live under `suites/neodax/perp/`.
+perp api (greenfield). suites live under `suites/nimbus/perp/`.
 
-## risk-tiers.spec.ts — tiered margin (YEN-2544), GET /perpetual/market-risk-tiers
+## test_risk_tiers.py — tiered margin (PERP-2544), GET /perpetual/market-risk-tiers
 | tag | case | grug |
 |---|---|---|
 | @stateless | seeded ladder + shape | ask BTC tiers. real ladder. all field good. |
@@ -16,14 +16,14 @@ perp api (greenfield). suites live under `suites/neodax/perp/`.
 | @stateless | all-markets snapshot | no symbol = all markets. BTC there. |
 | @stateless | unknown symbol 404 | bad symbol -> 404 market_not_found. |
 
-## risk-tier-leverage.spec.ts — leverage guards (YEN-2544)
+## test_risk_tier_leverage.py — leverage guards (PERP-2544)
 | tag | case | grug |
 |---|---|---|
 | @stateless | leverage < 1 rejected | set leverage 0 -> 400 invalid_leverage_value. |
 | @stateless | leverage > global max rejected | set leverage 126 -> 400 invalid_leverage_value. |
 | @trades | over-tier leverage rejected | cross acct. leverage high while flat. open big -> 400 leverage_exceeds_tier. |
 
-## position-history.spec.ts — position history (YEN-2548), GET /perpetual/position-history[/:id]
+## test_position_history.py — position history (PERP-2548), GET /perpetual/position-history[/:id]
 maps notion TC-Perps-011..017. api layer only (no UI, no forced liq/adl).
 | tag | case | grug | notion |
 |---|---|---|---|
@@ -37,7 +37,7 @@ maps notion TC-Perps-011..017. api layer only (no UI, no forced liq/adl).
 
 not covered (manual only, cant force in harness): TC-014/016 liquidation & adl status, TC-015/017 their order details.
 
-## tiered-reduction.spec.ts — tiered position reduction / Stage0 (YEN-2545)
+## test_tiered_reduction.py — tiered position reduction / Stage0 (PERP-2545)
 inject mark via faucet `/api/simulate-mark-price` (hold: re-submit every ~1.5s, price only lasts 2s).
 cross, fresh funded subject + maker per test, thin market (SUIUSDT-PERP). needs maker resting at
 bankruptcy (reduce is book IOC, NOT insurance fund). observe: `/perpetual/transaction/history?type=liquidation_partial`.
@@ -52,7 +52,7 @@ bankruptcy (reduce is book IOC, NOT insurance fund). observe: `/perpetual/transa
 
 **Observability facts:** LIQUIDATION_PARTIAL only in `/perpetual/transaction/history` (type filter accepts `liquidation_partial`). `/perpetual/trades` shows the delta fill but exec_type=`trade` (the `liquidation_partial` exec_type const is reserved/unused). `/perpetual/positions` = amount drops (no flag). `/position-history` = NO row for a partial (only full close). manual-only (can't force deterministically here): liquidation/adl full-close close_reason variants (TC-LIQ-031/032 depth/no-depth).
 
-## liquidation-takeover.spec.ts — takeover trade price integrity (YEN-3325) @trades @serial
+## test_liquidation_takeover.py — takeover trade price integrity (PERP-3325) @trades @serial
 full CROSS liquidation force-settles underwater legs at bankruptcy price via the settlement pool (NOT the
 book) -> real `exec_type=liquidation_takeover` trades. bug: a NEGATIVE bankruptcy price persisted as-is
 (price & total < 0). fix clamps <=0 -> 0, so invariant is **price >= 0 / total >= 0**.
@@ -68,8 +68,8 @@ price=0 is the fingerprint that makes the test non-vacuous — remove the clamp 
 WARNING: crashing the long market is market-wide (liquidates other longs there); restore ASAP.
 | tag | case | grug | notion |
 |---|---|---|---|
-| @trades | full cross liq records liquidation_takeover, price/total non-negative | fresh cross subject + maker. subject opens dominant LONG (SUI ~40k) + small SHORT (DOGE ~4k) vs maker. crash SUI mark to entry×0.01, hold DOGE mark entry×1.01 (short at small loss, not IOC'd). hold til account fully liquidated, restore both. poll /perpetual/trades both markets. NON-VACUOUS gate: >=1 takeover clamped to exactly 0 (batch clamp fired). INVARIANT: every liq trade price>=0 AND total>=0. fail-loud: both legs opened, fully liquidated, >=1 takeover. | YEN-3325 |
-| @trades | no trade carries negative price / inconsistent total | scan the liquidated account's FULL trade history (all exec_types, both markets). assert every row price>=0, total>=0, total==amount×price (bug persisted total = amount × NEGATIVE price). | YEN-3325 |
+| @trades | full cross liq records liquidation_takeover, price/total non-negative | fresh cross subject + maker. subject opens dominant LONG (SUI ~40k) + small SHORT (DOGE ~4k) vs maker. crash SUI mark to entry×0.01, hold DOGE mark entry×1.01 (short at small loss, not IOC'd). hold til account fully liquidated, restore both. poll /perpetual/trades both markets. NON-VACUOUS gate: >=1 takeover clamped to exactly 0 (batch clamp fired). INVARIANT: every liq trade price>=0 AND total>=0. fail-loud: both legs opened, fully liquidated, >=1 takeover. | PERP-3325 |
+| @trades | no trade carries negative price / inconsistent total | scan the liquidated account's FULL trade history (all exec_types, both markets). assert every row price>=0, total>=0, total==amount×price (bug persisted total = amount × NEGATIVE price). | PERP-3325 |
 
 **Takeover path IS live (code-confirmed, contra tiered-reduction's "insurance fund not live"):** `NewInsuranceService`
 wires FundService/TakeoverService/SettlementService; a full cross liq publishes synthetic `liquidation_takeover`
@@ -78,18 +78,18 @@ persist as `exec_type=trade`. **Residual gaps (not asserted, INFO only):** clamp
 takeover is still recorded); the **isolated** flow (`stage1/isolated/flow.go`) passes the raw bankruptcy price
 UNCLAMPED; no positive-price guard at the persistence layer (`RecordTrade` / `CreatePerpetualsTrade`).
 
-## account.spec.ts — perp account
+## test_account.py — perp account
 | tag | case | grug |
 |---|---|---|
 | @trades | account has USDT collateral | seed acct. USDT there. |
 | @trades | set leverage reflected | set 10x. acct show 10x. money not move. |
 
-## orders.spec.ts — perp orders (no fill)
+## test_orders.py — perp orders (no fill)
 | tag | case | grug |
 |---|---|---|
 | @trades | resting limit -> open_orders -> cancel | rest limit far. show in open_orders. margin lock. cancel -> gone. margin back. |
 
-## positions.spec.ts — perp position lifecycle
+## test_positions.py — perp position lifecycle
 | tag | case | grug |
 |---|---|---|
 | @serial | open via market fill | buy vs seeded maker. long grow by amount. margin lock. |

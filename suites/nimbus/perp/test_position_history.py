@@ -1,4 +1,4 @@
-"""perp position history (YEN-2548). port of suites/neodax/perp/position-history.spec.ts.
+"""perp position history (PERP-2548).
 
 GET /perpetual/position-history (closed-position lifecycle list) and
 GET /perpetual/position-history/:id (linked open->close fills). both require auth.

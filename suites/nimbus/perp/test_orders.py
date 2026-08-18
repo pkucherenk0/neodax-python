@@ -1,4 +1,4 @@
-"""perp orders. non-filling order lifecycle. port of suites/neodax/perp/orders.spec.ts.
+"""perp orders. non-filling order lifecycle.
 
 place resting gtc limit, see in open_orders + orders history, cancel, confirm reserved
 margin released. @trades no counterparty needed — order priced so never fills. teardown
@@ -61,7 +61,7 @@ class TestPerpOrders:
         reserved_margin = (float(amount) * float(rest_price)) / LEVERAGE
         # the shared `account` fixture only confirms perp settled to >=90% of `funding.perp_usdt`
         # (not the exact full amount) before handing the account back -- see the identical race
-        # documented in suites/neodax/spot/test_orders.py. settle "before" to the fixture's own
+        # documented in suites/nimbus/spot/test_orders.py. settle "before" to the fixture's own
         # known funded baseline first, rather than trusting whatever single read lands first.
         expected_baseline = float(funding.perp_usdt)
         before = poll_until(

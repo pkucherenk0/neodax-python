@@ -1,4 +1,4 @@
-"""mark-price simulator (YEN-2545 test). port of lib/mark-price.ts.
+"""mark-price simulator (PERP-2545 test).
 
 POST {faucet}/api/simulate-mark-price publish a mark-price event to kafka -> feeds the
 liquidation scanner, so we can drive a position into liquidation on UAT. client scoped to
@@ -7,10 +7,10 @@ the faucet host. no auth.
 WARNING: injection is MARKET-WIDE. it can liquidate other accounts on that market. use small
 moves, restore the real mark after (see restore_mark_price).
 
-python note: the TS holdMarkPrice used a background async loop. playwright sync-api objects
-are not thread-safe, so the port pumps injections INLINE: callers re-inject inside their own
-poll loop (see MarkHolder.pump / lib/liquidation.py). same effect — the injected extreme is
-re-published every ~1.5s so every 2s scanner window sees it.
+note: playwright sync-api objects are not thread-safe, so this pumps injections INLINE:
+callers re-inject inside their own poll loop (see MarkHolder.pump / lib/liquidation.py).
+same effect — the injected extreme is re-published every ~1.5s so every 2s scanner window
+sees it.
 """
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ def simulate_mark_price(faucet_client: ResilientClient, inj: MarkPriceInject) ->
 class MarkHolder:
     """the injected mark only holds ~2s then reverts to the real feed. to KEEP a price you must
     re-submit every ~2s. pump() re-injects every injection when interval_s elapsed — call it
-    from inside your poll loop (single-threaded equivalent of TS holdMarkPrice)."""
+    from inside your poll loop."""
 
     def __init__(self, faucet_client: ResilientClient, injections: list[MarkPriceInject], interval_s: float = 1.5) -> None:
         self._client = faucet_client

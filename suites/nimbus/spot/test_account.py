@@ -1,4 +1,4 @@
-"""spot account — read balance. port of suites/neodax/spot/account.spec.ts.
+"""spot account — read balance.
 
 @trades (funded account, opens no orders). spot has no leverage/positions, so account
 concern = balances only. report captures it.

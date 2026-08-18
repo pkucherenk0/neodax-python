@@ -1,5 +1,5 @@
 """perp market metadata (lot/tick/min-notional), pricing (mark + top of book), order sizing,
-order placement + fill readback. port of lib/perp.ts.
+order placement + fill readback.
 
 clients scoped to trading host. financial values arrive as strings, float()'d.
 """
@@ -269,7 +269,7 @@ def get_perp_fills_for_order(
 @dataclass(frozen=True)
 class PerpTrade:
     """one /perpetual/trades row, numbers parsed. exec_type in trade|liquidation|liquidation_takeover|adl.
-    total = amount x price (signed). price/total are the fields YEN-3325 corrupted (negative on takeover)."""
+    total = amount x price (signed). price/total are the fields PERP-3325 corrupted (negative on takeover)."""
 
     order_uuid: str
     market: str
@@ -409,7 +409,7 @@ def get_perp_transaction_history(
     page_size: int | None = None,
 ) -> PerpTransactionHistory:
     """GET /perpetual/transaction/history -> ledger rows. type filter (e.g. 'liquidation_partial' =
-    Stage0 tiered-reduction marker, YEN-2545). items may be null when empty -> normalized to []."""
+    Stage0 tiered-reduction marker, PERP-2545). items may be null when empty -> normalized to []."""
     parts = [f"app_session_id={quote(app_session_id)}"]
     if type:
         parts.append(f"type={quote(type)}")

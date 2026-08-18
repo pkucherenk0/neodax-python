@@ -1,14 +1,15 @@
 {
-  "name": "neodax-e2e",
+  "name": "nimbus-e2e",
   "private": true,
   "version": "0.0.0",
-  "description": "Real MetaMask (dappwright) visual e2e for neodax-python -- the UI-e2e layer, paired with suites/ (API integration). See ../AGENTS.md for why this is a separate Node project.",
+  "description": "Real MetaMask (dappwright) visual e2e for nimbus-python -- the UI-e2e layer, paired with suites/ (API integration). See ../AGENTS.md for why this is a separate Node project.",
   "scripts": {
     "test": "playwright test"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.0",
     "@tenkeylabs/dappwright": "^2.9.0",
+    "dotenv": "^17.4.2",
     "typescript": "^5.6.0"
   }
 }

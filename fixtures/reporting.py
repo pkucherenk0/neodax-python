@@ -1,5 +1,5 @@
 """per-test bookkeeping: artifacts (accounts/orders/trades saved during a test) + the
-detailed markdown/JSON report written at session end. port of reporters/detailed.ts.
+detailed markdown/JSON report written at session end.
 """
 from __future__ import annotations
 
@@ -52,8 +52,8 @@ def _safe_name(s: str) -> str:
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
-    """write results/runs/<runId>/detailed-report.md + detailed/<test>.json (port of
-    reporters/detailed.ts). per-worker under xdist: workers append their own tests."""
+    """write results/runs/<runId>/detailed-report.md + detailed/<test>.json.
+    per-worker under xdist: workers append their own tests."""
     if not _test_reports:
         return
     base = Path(run_dir())

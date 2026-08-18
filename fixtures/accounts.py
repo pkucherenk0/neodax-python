@@ -6,15 +6,20 @@ a retry re-places live orders -> double volume / lost funds).
 """
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TypeVar
 
 import pytest
 from eth_account import Account
 from eth_account.messages import encode_defunct
+from eth_utils import to_checksum_address
 
 from configs.competition import competition_slug, funding
 from fixtures.clients import ClientFactory
 from lib.artifacts import record_account
+from lib.auth import refresh_access_token
 from lib.funding import (
     faucet_deposit,
     get_perp_available,
@@ -27,6 +32,8 @@ from lib.schemas import AuthChallenge, AuthVerify
 from lib.types import EnvConfig
 from lib.validate import parsed_json
 
+T = TypeVar("T")
+
 # funding setup take more 5xx than hot path. 6 retries ~ up to ~60s backoff.
 # cover transient "validation_unavailable" 503 on faucet/transfer.
 PATIENT_RETRIES = 6
@@ -36,15 +43,21 @@ PATIENT_RETRIES = 6
 class FreshWallet:
     address: str
     jwt: str  # auth service access_token
+    refresh_token: str  # this env's access_token TTL is 60s -- see refresh_account_token()
     app_session_id: str  # == address. used as app_session_id in trading/faucet calls
 
 
-@dataclass(frozen=True)
+@dataclass
 class TradingAccount:
-    """funded + ENROLLED + ready-to-trade account (uat). competition subject."""
+    """funded + ENROLLED + ready-to-trade account (uat). competition subject.
+
+    NOT frozen: refresh_account_token() reassigns jwt/refresh_token/trading_client/
+    order_client in place when the access_token (60s TTL) needs renewing mid-flow.
+    """
 
     address: str
     jwt: str
+    refresh_token: str
     app_session_id: str
     trading_client: ResilientClient  # reads/funding (retry 5xx)
     order_client: ResilientClient  # order place. NO retry 5xx. avoid double execution
@@ -71,20 +84,71 @@ def _sig_hex(signature: bytes) -> str:
 
 
 def _authenticate(cfg: EnvConfig, factory: ClientFactory, wallet) -> FreshWallet:
-    """auth: wallet challenge -> sign -> verify -> access_token. one place to point at live auth."""
+    """auth: wallet challenge -> sign -> verify -> access_token. one place to point at live auth.
+
+    force EIP-55 checksummed casing here, once, regardless of what the wallet object's own
+    .address happens to be -- app_session_id is used as an exact-match key across THREE
+    services (auth, trading-api, faucet), and confirmed live: the faucet does NOT normalize
+    casing against the trading account, so any mismatch silently drops a deposit (reports
+    success, credit never lands). every wallet source we use already produces checksummed
+    addresses today, but this makes that invariant explicit instead of assumed.
+    """
+    address = to_checksum_address(wallet.address)
     handle = factory.make(cfg.auth_base)
     try:
-        challenge_res = handle.client.post("/auth/challenge", data={"wallet_address": wallet.address})
+        challenge_res = handle.client.post("/auth/challenge", data={"wallet_address": address})
         challenge = parsed_json(challenge_res, AuthChallenge).challenge
         signed = Account.sign_message(encode_defunct(text=challenge), private_key=wallet.key)
         verify_res = handle.client.post("/auth/verify", data={
-            "wallet_address": wallet.address, "challenge": challenge, "signature": _sig_hex(signed.signature),
+            "wallet_address": address, "challenge": challenge, "signature": _sig_hex(signed.signature),
         })
-        token = parsed_json(verify_res, AuthVerify).access_token
+        verified = parsed_json(verify_res, AuthVerify)
+        assert verified.refresh_token, f"auth verify did not return a refresh_token for {address}"
         # app_session_id == wallet address in trading/faucet APIs.
-        return FreshWallet(address=wallet.address, jwt=token, app_session_id=wallet.address)
+        return FreshWallet(address=address, jwt=verified.access_token,
+                           refresh_token=verified.refresh_token, app_session_id=address)
     finally:
         handle.dispose()
+
+
+def refresh_account_token(cfg: EnvConfig, factory: ClientFactory, account: TradingAccount) -> None:
+    """re-authenticate `account` via its refresh_token and rebuild its clients with the new
+    access_token, in place. this env's access_token TTL is 60s (confirmed by decoding a live
+    token's exp/iat claims) -- call this after any wait/step that could plausibly have eaten
+    that budget (a slow provisioning, a long poll for a liquidation to actually happen, etc.)
+    before making further authenticated calls on this account.
+
+    refresh_token ROTATES (single-use) -- the one returned here replaces it immediately, so
+    this can be called repeatedly across a long test."""
+    auth = factory.make(cfg.auth_base)
+    try:
+        refreshed = refresh_access_token(auth.client, account.refresh_token)
+    finally:
+        auth.dispose()
+    account.jwt = refreshed.access_token
+    assert refreshed.refresh_token, f"auth refresh did not return a new refresh_token for {account.address}"
+    account.refresh_token = refreshed.refresh_token
+    account.trading_client = factory.make(cfg.trading_base, account.jwt, max_retries=PATIENT_RETRIES).client
+    account.order_client = factory.make(cfg.trading_base, account.jwt, retry_on_5xx=False).client
+
+
+def auto_refreshing(cfg: EnvConfig, factory: ClientFactory, account: TradingAccount,
+                    read: Callable[[], T], *, every_s: float = 45.0) -> Callable[[], T]:
+    """wrap a zero-arg `read` callback so `account`'s token refreshes (in place, via
+    refresh_account_token) if more than `every_s` has elapsed since the last refresh --
+    for callbacks invoked repeatedly across a poll loop that could plausibly outlive the
+    60s access_token TTL (drive_cross_account_liquidation/drive_stepwise_liquidation's
+    size_of callbacks, which can run for tens of seconds to a few minutes). `every_s`
+    defaults comfortably under the 60s TTL to leave headroom for the read itself."""
+    state = {"t": time.monotonic()}
+
+    def _read() -> T:
+        if time.monotonic() - state["t"] > every_s:
+            refresh_account_token(cfg, factory, account)
+            state["t"] = time.monotonic()
+        return read()
+
+    return _read
 
 
 def _mint_account(cfg: EnvConfig, factory: ClientFactory, role: str) -> FreshWallet:
@@ -126,8 +190,13 @@ def _provision_funded(cfg: EnvConfig, factory: ClientFactory, *, spot_usdt: str,
     trading = factory.make(cfg.trading_base, fresh.jwt, max_retries=PATIENT_RETRIES)
     order = factory.make(cfg.trading_base, fresh.jwt, retry_on_5xx=False)
     _fund_spot_then_perp(cfg, factory, fresh, trading.client, spot_usdt, perp_usdt)
-    return TradingAccount(address=fresh.address, jwt=fresh.jwt, app_session_id=fresh.app_session_id,
-                          trading_client=trading.client, order_client=order.client)
+    result = TradingAccount(address=fresh.address, jwt=fresh.jwt, refresh_token=fresh.refresh_token,
+                            app_session_id=fresh.app_session_id,
+                            trading_client=trading.client, order_client=order.client)
+    # funding (faucet + settle + transfer + settle) can alone eat the 60s access_token TTL --
+    # hand back an account with a FRESH token/clients, not one that's already stale.
+    refresh_account_token(cfg, factory, result)
+    return result
 
 
 @pytest.fixture

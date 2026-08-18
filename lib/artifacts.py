@@ -1,6 +1,6 @@
 """save generated account creds + order/trade ids to the current run's folder (CONVENTIONS §12).
 
-port of lib/artifacts.ts. results/runs/<runId>/artifacts/worker-<pid>.jsonl. one file per
+results/runs/<runId>/artifacts/worker-<pid>.jsonl. one file per
 worker process. throwaway UAT wallets only — private key saved on purpose (§8 exception).
 framework-agnostic. best-effort: never fail a test.
 """

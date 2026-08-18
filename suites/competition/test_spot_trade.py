@@ -1,4 +1,4 @@
-"""spot trade vs comp (perp-spot-0). port of suites/competition/spot-trade.spec.ts.
+"""spot trade vs comp (perp-spot-0).
 
 @trades: real orders + faucet spend on uat. two accounts: spot_maker rests sell inside
 spread, enrolled_account (subject) lifts it as taker. asserts charged fee matches fee engine,

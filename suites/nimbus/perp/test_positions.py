@@ -1,9 +1,9 @@
-"""perp position lifecycle @serial. port of suites/neodax/perp/positions.spec.ts.
+"""perp position lifecycle @serial.
 
 open long via market taker fill vs seeded perp_maker, verify in /positions, then close
 reduce-only. check balance/margin each step. NO retries.
 
-run: pytest -m serial suites/neodax/perp/test_positions.py   (one process, never -n)
+run: pytest -m serial suites/nimbus/perp/test_positions.py   (one process, never -n)
 """
 import math
 

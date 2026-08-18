@@ -1,4 +1,4 @@
-"""offline unit tests for perp sizing math. port of test/unit/perp-sizing.test.ts. no network."""
+"""offline unit tests for perp sizing math. no network."""
 import pytest
 
 from lib.perp import PerpMarket, TopOfBook, maker_price_inside_spread, round_tick, size_amount

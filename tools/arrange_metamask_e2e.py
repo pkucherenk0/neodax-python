@@ -1,6 +1,6 @@
 """One-off arrangement for the MetaMask (dappwright) visual e2e test in e2e/.
 
-dappwright (real MetaMask automation) only exists in Node/TS, so that test lives outside
+dappwright (real MetaMask automation) only exists in Node, so that test lives outside
 this Python suite. This script does the API side in Python (this repo's existing lib/,
 same as every other suite) — mints + funds two throwaway UAT accounts, then writes their
 credentials to e2e/.arrangement.json for the Node/Playwright test to read.
@@ -24,10 +24,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from dotenv import load_dotenv
 from eth_account import Account
 from eth_account.messages import encode_defunct
+from eth_utils import to_checksum_address
 from playwright.sync_api import sync_playwright
 
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")  # invoked from e2e/ (cwd), not repo root
 Account.enable_unaudited_hdwallet_features()
 
 from configs.competition import funding, perp_market
@@ -42,16 +45,21 @@ def _sig_hex(sig: bytes) -> str:
     return h if h.startswith("0x") else "0x" + h
 
 
-def _mint_and_auth(auth_ctx, wallet):
-    ch = auth_ctx.post("/auth/challenge", data={"wallet_address": wallet.address})
+def _mint_and_auth(auth_ctx, wallet) -> tuple[str, str]:
+    """returns (checksummed_address, access_token). force EIP-55 casing here, once -- confirmed
+    live: the faucet does NOT normalize casing against the trading account, so any mismatch
+    silently drops a deposit (reports success, credit never lands). every downstream call
+    (faucet, trading, the written .arrangement.json) must use this SAME address string."""
+    address = to_checksum_address(wallet.address)
+    ch = auth_ctx.post("/auth/challenge", data={"wallet_address": address})
     assert ch.ok, f"auth challenge failed: HTTP {ch.status} {ch.text()}"
     challenge = ch.json()["challenge"]
     signed = Account.sign_message(encode_defunct(text=challenge), private_key=wallet.key)
     v = auth_ctx.post("/auth/verify", data={
-        "wallet_address": wallet.address, "challenge": challenge, "signature": _sig_hex(signed.signature),
+        "wallet_address": address, "challenge": challenge, "signature": _sig_hex(signed.signature),
     })
     assert v.ok, f"auth verify failed: HTTP {v.status} {v.text()}"
-    return v.json()["access_token"]
+    return address, v.json()["access_token"]
 
 
 def main() -> None:
@@ -61,25 +69,25 @@ def main() -> None:
         faucet_ctx = pw.request.new_context(base_url=cfg.faucet_url)
 
         subject_wallet, subject_mnemonic = Account.create_with_mnemonic()
-        subject_token = _mint_and_auth(auth_ctx, subject_wallet)
+        subject_address, subject_token = _mint_and_auth(auth_ctx, subject_wallet)
         subject_trading = pw.request.new_context(base_url=cfg.trading_base,
                                                   extra_http_headers={"Authorization": f"Bearer {subject_token}"})
-        faucet_deposit(faucet_ctx, subject_wallet.address, funding.spot_usdt)
-        wait_for_balance(lambda: get_spot_available(subject_trading, subject_wallet.address),
+        faucet_deposit(faucet_ctx, subject_address, funding.spot_usdt)
+        wait_for_balance(lambda: get_spot_available(subject_trading, subject_address),
                          float(funding.spot_usdt) * 0.9, funding.settle_timeout_s)
-        print(f"subject funded (spot only): {subject_wallet.address}")
+        print(f"subject funded (spot only): {subject_address}")
 
         maker_wallet = Account.create()
-        maker_token = _mint_and_auth(auth_ctx, maker_wallet)
+        maker_address, maker_token = _mint_and_auth(auth_ctx, maker_wallet)
         maker_trading = pw.request.new_context(base_url=cfg.trading_base,
                                                 extra_http_headers={"Authorization": f"Bearer {maker_token}"})
-        faucet_deposit(faucet_ctx, maker_wallet.address, funding.spot_usdt)
-        wait_for_balance(lambda: get_spot_available(maker_trading, maker_wallet.address),
+        faucet_deposit(faucet_ctx, maker_address, funding.spot_usdt)
+        wait_for_balance(lambda: get_spot_available(maker_trading, maker_address),
                          float(funding.spot_usdt) * 0.9, funding.settle_timeout_s)
-        transfer_spot_to_perp(maker_trading, maker_wallet.address, funding.perp_usdt)
-        wait_for_balance(lambda: get_perp_available(maker_trading, maker_wallet.address),
+        transfer_spot_to_perp(maker_trading, maker_address, funding.perp_usdt)
+        wait_for_balance(lambda: get_perp_available(maker_trading, maker_address),
                          float(funding.perp_usdt) * 0.9, funding.settle_timeout_s)
-        print(f"maker funded (spot+perp): {maker_wallet.address}")
+        print(f"maker funded (spot+perp): {maker_address}")
 
         auth_ctx.dispose()
         faucet_ctx.dispose()
@@ -90,8 +98,8 @@ def main() -> None:
     OUT.write_text(json.dumps({
         "env": {"trading_base": cfg.trading_base, "auth_base": cfg.auth_base},
         "market": perp_market,
-        "subject": {"address": subject_wallet.address, "mnemonic": subject_mnemonic},
-        "maker": {"address": maker_wallet.address, "access_token": maker_token},
+        "subject": {"address": subject_address, "mnemonic": subject_mnemonic},
+        "maker": {"address": maker_address, "access_token": maker_token},
     }, indent=2))
     print(f"wrote {OUT}")
 

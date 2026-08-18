@@ -1,7 +1,4 @@
-"""canonical shapes for harness. read this first to understand data flow.
-
-python port of lib/types.ts — formalize structures that live as prose in the TS original.
-"""
+"""canonical shapes for harness. read this first to understand data flow."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -45,7 +42,7 @@ Role = Literal["taker", "maker"]
 
 
 # fee-schedule tier resolved from live competition schedule. rates = decimals (0.0004 = 4bps).
-# vol_min / yellow_min = campaign thresholds that qualify tier.
+# vol_min / nim_min = campaign thresholds that qualify tier.
 @dataclass(frozen=True)
 class Tier:
     level: int
@@ -55,4 +52,4 @@ class Tier:
     spot_taker: float
     spot_maker: float
     vol_min: float
-    yellow_min: float
+    nim_min: float

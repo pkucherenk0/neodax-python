@@ -1,5 +1,4 @@
-"""perp leverage-based tiered margin (YEN-2544). leverage enforcement.
-port of suites/neodax/perp/risk-tier-leverage.spec.ts. two layers:
+"""perp leverage-based tiered margin (PERP-2544). leverage enforcement. two layers:
 
   1. global pre-tier guard on POST /perpetual/leverage. leverage must be in [1, globalMax].
      rejected before any account/position lookup, so no funding needed (@stateless);

@@ -1,5 +1,4 @@
 """spot fee overlay (perp-spot-0, volume_source=spot_perp -> spot IS in comp).
-port of suites/competition/spot-fees.spec.ts.
 
 @stateless: enroll + read fee endpoints. no funding, no trades.
 at Base tier (0 volume) overlay rates == standard, no discount yet. assertable now: overlay

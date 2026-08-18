@@ -1,9 +1,9 @@
-# Test-writing conventions — the fixed approach (Python port)
+# Test-writing conventions — the fixed approach
 
 These rules are **not suggestions**. Every test in this repo follows them so that any human or
-AI agent can read, write, and trust any test without re-learning local style. The TS original
-enforced part of this with ESLint; here the enforcement is review + the patterns in
-`TEMPLATE_template.py` (a ruff/flake8 config can mechanize some rules later).
+AI agent can read, write, and trust any test without re-learning local style. Enforcement is
+review + the patterns in `TEMPLATE_template.py` (a ruff/flake8 config can mechanize some rules
+later).
 
 > One-line mental model: **Arrange via fixtures → Act via the API client → Assert on ground truth.**
 > Deterministic, isolated, marked, no live-money surprises.
@@ -118,10 +118,28 @@ the expected value, so a test can silently "bless" wrong behavior. Every test mu
   detailed report).
 - **"Delete the feature" test.** If the feature were removed/broken, would this test go red?
   If not, it's decorative — rewrite it.
-Pure `lib/` logic is additionally guarded by unit tests (`pytest tests/unit`); the TS original
-also mutation-tests them (Stryker) — the Python equivalent (`mutmut`) is not yet wired.
+Pure `lib/` logic is additionally guarded by unit tests (`pytest tests/unit`); mutation testing
+(`mutmut`) is not yet wired.
 
 ---
+
+## Known gotchas (debugging notes, not rules)
+
+**Multi-leg live-money setups: order by risk, not by narrative.** A test that opens more than
+one margin-consuming position on the same account should open the small/low-volatility leg(s)
+FIRST, the large/volatile one LAST — not in whatever order reads best in the test's own story.
+Real cause, found in `suites/nimbus/perp/test_liquidation_takeover.py`: opening a large
+($40k-notional) leg first let its own live mark-price movement (a few % in well under a
+minute — normal volatility on a thin market, not a bug) eat into unrealized PnL enough that a
+*second* order's margin-availability CHECK got rejected (`insufficient_margin`, `Available: 0`)
+even though the account had plenty of nominal equity. This is NOT a settlement lag — a
+poll-and-wait fix does nothing, because there's no lag to wait out, just a real loss that
+already happened. The fix was reordering the two `create_perp_order` calls (small leg's margin
+check now passes against the untouched deposit before the volatile leg exists at all), not
+padding the deposit or retrying. If you see `insufficient_margin` with a suspiciously exact
+`Available: 0` right after opening an unrelated position, dump the FULL account
+(`get_perp_account`, not just `get_perp_balance_snapshot`) before assuming it's a timing bug —
+`total_unrealized_pnl` will tell you immediately whether a real price move is the cause.
 
 ## The canonical shape
 See **`suites/TEMPLATE_template.py`** (copy it) and the live reference

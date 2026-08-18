@@ -1,4 +1,4 @@
-"""reference tests. copy to add new stateless case. port of suites/competition/enrollment.spec.ts.
+"""reference tests. copy to add new stateless case.
 
 @stateless: independent, parallel-safe. no funding, no trades.
 pattern: arrange via fixtures -> act via api client -> assert status AND validated shape.

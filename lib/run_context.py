@@ -1,4 +1,4 @@
-"""one folder per test run: results/runs/run-NNNN-<ts>/. port of lib/run-context.ts.
+"""one folder per test run: results/runs/run-NNNN-<ts>/.
 
 NNNN = incremental (human order), <ts> suffix = unique (no collide on concurrent runs).
 conftest mints it in the MAIN process + publishes via env + pointer file; xdist workers +
@@ -43,8 +43,8 @@ def create_run_context() -> tuple[str, str]:
     run_path.mkdir(parents=True, exist_ok=True)
     RESULTS.mkdir(parents=True, exist_ok=True)
     POINTER.write_text(str(run_path))
-    os.environ["NEODAX_RUN_DIR"] = str(run_path)
-    os.environ["NEODAX_RUN_ID"] = run_id
+    os.environ["NIMBUS_RUN_DIR"] = str(run_path)
+    os.environ["NIMBUS_RUN_ID"] = run_id
     # results/latest -> newest run. symlink best-effort.
     latest = RESULTS / "latest"
     try:
@@ -65,7 +65,7 @@ def run_dir() -> str:
     global _cached
     if _cached:
         return _cached
-    from_env = os.environ.get("NEODAX_RUN_DIR")
+    from_env = os.environ.get("NIMBUS_RUN_DIR")
     if from_env:
         _cached = from_env
         return _cached

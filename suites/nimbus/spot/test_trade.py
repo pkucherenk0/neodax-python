@@ -1,4 +1,4 @@
-"""spot trade — real maker/taker fill vs SEEDED liquidity. port of suites/neodax/spot/trade.spec.ts.
+"""spot trade — real maker/taker fill vs SEEDED liquidity.
 
 spot_maker rests sell one tick inside spread, enrolled account market-buys and lifts it.
 assert taker fill executed and both balances moved (USDT spent, base received). @trades.

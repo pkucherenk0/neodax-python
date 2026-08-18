@@ -2,7 +2,7 @@
 
 grug list. every test here. few word. `@stateless` = no money. `@trades` = real order. `@serial` = ordered, share volume.
 
-split by topic. one file per topic. keep fresh: add row when add test. run `npm run list` to check nothing missing.
+split by topic. one file per topic. keep fresh: add row when add test. run `pytest --collect-only -q` to check nothing missing.
 
 | topic | file | what |
 |---|---|---|

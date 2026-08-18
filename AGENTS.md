@@ -1,8 +1,7 @@
-# neodax-python — agent & contributor guide
+# nimbus-python — agent & contributor guide
 
-API/integration test harness for NeoDax. pytest + Playwright in **API mode** (no browser).
-Python port of the Playwright-TS `neodax-test` harness. Domain logic lives in `lib/`; specs
-are thin arrange/act/assert wrappers.
+API/integration test harness for Nimbus. pytest + Playwright in **API mode** (no browser).
+Domain logic lives in `lib/`; specs are thin arrange/act/assert wrappers.
 
 ## Run
 ```bash
@@ -48,8 +47,8 @@ UI e2e tests live in the separate `e2e/` Node project (see above), not as a pyte
 ## Where things live
 - `CONVENTIONS.md` — **the fixed test-writing contract. Read before writing any test.**
   §11 = caveman comment rule. §13 = anti-false-positive rules.
-- `TEST_CASES.md` — index into per-topic lists under `docs/test-cases/` (copied from the TS
-  original; content applies as-is). Add a row when you add a test.
+- `TEST_CASES.md` — index into per-topic lists under `docs/test-cases/`. Add a row when you
+  add a test.
 - `fixtures/`     — ALL fixtures, split by concern (`clients.py`, `accounts.py`, `reporting.py`):
   `env`, `fresh_wallet`, `account`, `spot_maker`, `perp_maker`,
   `new_funded_account`. Get clients/accounts from fixtures, never ad-hoc. Also the detailed
@@ -94,10 +93,10 @@ UI e2e tests live in the separate `e2e/` Node project (see above), not as a pyte
   Agents/CI: `results/latest/detailed/<test>.json`.
 
 ## Status
-Full port of the TS harness: lib (15 modules), fixtures/ (split by concern), 18 suites (health,
-competition ×7, neodax perp ×8, neodax spot ×3), offline unit tests, red-green + api-coverage
-tools, and a real UI e2e suite (`e2e/`, separate Node project — real MetaMask via dappwright,
-not session injection). Live suites have been run against UAT from this repo (safe/trades/serial
-lanes all green). CI is wired: `.github/workflows/ci.yml` (full lane, push) and
+lib (15 modules), fixtures/ (split by concern), 18 suites (health, competition ×7, nimbus
+perp ×8, nimbus spot ×3), offline unit tests, red-green + api-coverage tools, and a real UI
+e2e suite (`e2e/`, separate Node project — real MetaMask via dappwright, not session
+injection). Live suites have been run against UAT from this repo (safe/trades/serial lanes
+all green). CI is wired: `.github/workflows/ci.yml` (full lane, push) and
 `.github/workflows/pr-check.yml` (fast safe-lane, required PR check). Mutation testing (mutmut)
 is not wired yet.

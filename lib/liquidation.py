@@ -1,6 +1,6 @@
-"""liquidation drivers. port of lib/liquidation.ts.
+"""liquidation drivers.
 
-drive a LONG position into PIECEWISE liquidation (YEN-2545): insurance fund is not live, so
+drive a LONG position into PIECEWISE liquidation (PERP-2545): insurance fund is not live, so
 each tier reduction is a ReduceOnly IOC that fills against a real book bid the CALLER must
 seed (counterparty). we drop the mark in small steps and HOLD each level (a mark lasts ~2s,
 so re-inject every poll); each step that shrinks the size is one "piece". never raises.
@@ -79,7 +79,7 @@ def drive_cross_account_liquidation(
     poll_s: float = 1.5,
 ) -> FullLiquidationResult:
     """drive a whole CROSS account into FULL liquidation (Stage1 batch takeover) by holding one
-    or more adverse marks at once. YEN-3325 needs the MULTI-LEG batch path: a deeply-crashed
+    or more adverse marks at once. PERP-3325 needs the MULTI-LEG batch path: a deeply-crashed
     LONG mark drags shared equity negative so a SHORT sibling leg's allocated settlement price
     goes <=0 (clamped). the takeover uses the settlement pool (no book counterparty).
 

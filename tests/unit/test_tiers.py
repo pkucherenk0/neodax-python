@@ -1,4 +1,4 @@
-"""offline unit tests for pure tier math. port of test/unit/tiers.test.ts. no network."""
+"""offline unit tests for pure tier math. no network."""
 import pytest
 
 from lib.schemas import CompetitionSchedule
@@ -9,9 +9,9 @@ COMP = CompetitionSchedule.model_validate({
     "slug": "c",
     "status": "active",
     "fee_tiers": [
-        {"tier_level": 2, "tier_name": "VIP2", "campaign_volume_req_usd": "1000", "campaign_yellow_req": "50",
+        {"tier_level": 2, "tier_name": "VIP2", "campaign_volume_req_usd": "1000", "campaign_nim_req": "50",
          "spot_maker_bps": "6", "spot_taker_bps": "8", "perp_maker_bps": "0.8", "perp_taker_bps": "3.5"},
-        {"tier_level": 1, "tier_name": "VIP1", "campaign_volume_req_usd": "250", "campaign_yellow_req": "10",
+        {"tier_level": 1, "tier_name": "VIP1", "campaign_volume_req_usd": "250", "campaign_nim_req": "10",
          "spot_maker_bps": "8", "spot_taker_bps": "10", "perp_maker_bps": "1", "perp_taker_bps": "4"},
     ],
 })
@@ -25,7 +25,7 @@ class TestCompetitionToTiers:
         assert [t.name for t in tiers] == ["VIP1", "VIP2"]
         assert tiers[0].perp_taker == pytest.approx(4 / 10_000, abs=1e-12)
         assert tiers[0].spot_maker == pytest.approx(8 / 10_000, abs=1e-12)
-        assert tiers[0].yellow_min == 10
+        assert tiers[0].nim_min == 10
         assert tiers[1].perp_maker == pytest.approx(0.8 / 10_000, abs=1e-12)
 
     def test_returns_none_when_fee_tiers_is_absent_or_empty(self):
@@ -50,19 +50,19 @@ class TestExpectedCompTier:
 
 
 class TestExpectedTierEither:
-    """volume OR yellow qualifies."""
+    """volume OR nim qualifies."""
 
     tiers = competition_to_tiers(COMP)
 
-    def test_yellow_alone_can_qualify_a_higher_tier_with_no_volume(self):
-        assert expected_tier_either(self.tiers, 0, 50).name == "VIP2"  # yellow 50 >= VIP2 yellow_min
+    def test_nim_alone_can_qualify_a_higher_tier_with_no_volume(self):
+        assert expected_tier_either(self.tiers, 0, 50).name == "VIP2"  # nim 50 >= VIP2 nim_min
         assert expected_tier_either(self.tiers, 0, 10).name == "VIP1"
 
     def test_volume_alone_still_qualifies(self):
         assert expected_tier_either(self.tiers, 1000, 0).name == "VIP2"
 
     def test_takes_the_higher_of_the_two_paths(self):
-        assert expected_tier_either(self.tiers, 300, 50).name == "VIP2"  # vol->VIP1, yellow->VIP2 => VIP2
+        assert expected_tier_either(self.tiers, 300, 50).name == "VIP2"  # vol->VIP1, nim->VIP2 => VIP2
 
 
 class TestEmptyScheduleGuards:

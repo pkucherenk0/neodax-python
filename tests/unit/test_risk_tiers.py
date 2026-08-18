@@ -1,4 +1,4 @@
-"""offline unit tests for pure risk-tier math. port of test/unit/risk-tiers.test.ts. no network."""
+"""offline unit tests for pure risk-tier math. no network."""
 import pytest
 
 from lib.risk_tiers import RiskTier, maintenance_margin_for_notional, select_risk_tier_for_notional
@@ -10,7 +10,7 @@ def _tier(idx: int, cap: float, lev: float, imr: float, mmr: float) -> RiskTier:
                     from_config_table=True)
 
 
-# pure tier math (mutation-tested in the TS original). tiers: caps 100/250/1000, mmr 0.005/0.01/0.025.
+# tiers: caps 100/250/1000, mmr 0.005/0.01/0.025.
 TIERS = [
     _tier(1, 100, 100, 0.01, 0.005),
     _tier(2, 250, 50, 0.02, 0.01),
