@@ -65,12 +65,12 @@ def clients(_pw: Playwright) -> ClientFactory:
 
 @dataclass
 class EnvContext:
-    """port of the TS EnvContext: EnvConfig + client_for()."""
+    """resolved env config + client_for(): the single entry point specs use to get an API client."""
 
     cfg: EnvConfig
     _factory: ClientFactory = field(repr=False, default=None)
 
-    # convenience pass-throughs so specs read like the TS ones
+    # convenience pass-throughs so specs can read env.name / env.wallets_auto_funded directly
     @property
     def name(self) -> str:
         return self.cfg.name

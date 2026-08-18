@@ -1,4 +1,4 @@
-"""perp trade vs comp (perp-spot-0). port of suites/competition/perp-trade.spec.ts.
+"""perp trade vs comp (perp-spot-0).
 
 @trades: real orders + faucet spend on uat. mirrors spot two-account maker/taker: perp_maker
 rests limit inside spread (guaranteed counterparty), enrolled_account (subject) hits it with

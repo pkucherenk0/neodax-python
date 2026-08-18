@@ -1,4 +1,4 @@
-"""competition volume driver. port of lib/fee-flow.ts.
+"""competition volume driver.
 
 enrolled SUBJECT always take. non-enrolled MAKER rest one tick inside spread -> guaranteed
 counterparty. HEDGE round-trip stay FLAT so margin freed each cycle. taker work LONG leg,

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """red-green: prove a test can FAIL (anti-false-positive, CONVENTIONS §13).
-port of scripts/red-green.mjs.
 
 runs the target test once (must PASS = baseline green), then MUTATES its expected values
 (flip booleans, bump numbers, corrupt string literals on the right side of comparisons inside

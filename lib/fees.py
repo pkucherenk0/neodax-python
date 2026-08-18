@@ -1,4 +1,4 @@
-"""fee readback. port of lib/fees.ts. fee-tier-effective endpoint = authoritative best-of
+"""fee readback. fee-tier-effective endpoint = authoritative best-of
 (standard VIP tier vs competition overlay). rate fields = bps strings, callers float().
 clients must be scoped to trading host.
 """

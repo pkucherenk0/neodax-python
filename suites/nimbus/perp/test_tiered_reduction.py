@@ -1,5 +1,4 @@
-"""perp tiered position reduction / Stage0 (YEN-2545).
-port of suites/neodax/perp/tiered-reduction.spec.ts.
+"""perp tiered position reduction / Stage0 (PERP-2545).
 
 liquidate a cross position PIECEWISE: each mark drop peels ONE tier (ReduceOnly IOC on the
 book at bankruptcy) -> LIQUIDATION_PARTIAL ledger row. insurance fund NOT live, so the reduce
@@ -7,11 +6,12 @@ needs a real counterparty order -> the TEST seeds a maker bid. cross margin, fre
 subject + maker per test (never touch shared account). thin market.
 as-built (NOT the ticket): fixed 1 tier/round, book-matched IOC, no insurance fund.
 
-run: pytest -m serial suites/neodax/perp/test_tiered_reduction.py   (one process)
+run: pytest -m serial suites/nimbus/perp/test_tiered_reduction.py   (one process)
 """
 import pytest
 
 from configs.competition import tiered_reduction as cfg
+from fixtures.accounts import auto_refreshing, refresh_account_token
 from lib.liquidation import drive_stepwise_liquidation
 from lib.mark_price import restore_mark_price
 from lib.perp import (
@@ -76,7 +76,7 @@ def _open_long_vs_maker(subject, maker, mkt, notional_usd: float, leverage: int)
 @pytest.mark.serial
 class TestPerpTieredPositionReduction:
     @pytest.mark.timeout(900)  # two provisions + open + stepwise drops (each holds several seconds)
-    def test_1_liquidation_reduces_position_piece_by_piece_not_all_at_once(self, env, new_funded_account):
+    def test_1_liquidation_reduces_position_piece_by_piece_not_all_at_once(self, env, clients, new_funded_account):
         # arrange — faucet-host client for mark injection (uat only).
         assert env.faucet_url, "faucet host needed for mark injection (uat)"
         faucet = env.client_for(None, env.faucet_url)
@@ -97,6 +97,11 @@ class TestPerpTieredPositionReduction:
         assert len(tiers) >= 3, "multi-tier ladder"
         assert cfg.open_notional_usd > tiers[1].max_notional_quote, "open notional reaches tier 3+ (multiple pieces possible)"
 
+        # provisioning + the reads above can, in aggregate, eat the 60s access_token TTL on
+        # their own (retries/backoff during funding especially) -- refresh right before the
+        # first real trading call rather than trust the provisioning-time refresh's margin.
+        refresh_account_token(env.cfg, clients, subject)
+        refresh_account_token(env.cfg, clients, maker)
         set_perp_leverage(subject.order_client, subject.app_session_id, mkt.market, cfg.leverage)
         set_perp_leverage(maker.order_client, maker.app_session_id, mkt.market, cfg.leverage)
 
@@ -119,7 +124,12 @@ class TestPerpTieredPositionReduction:
             type="liquidation_partial", market=mkt.market, page_size=200).items)
 
         # act 3 — drop the mark in small steps; each step peels one tier. (holds/re-injects internally.)
-        size_of = lambda: long_size(get_perp_positions(subject.trading_client, subject.app_session_id, mkt.market))
+        # this env's access_token TTL is 60s -- max_steps x step_hold_s can run for minutes, so
+        # size_of proactively refreshes subject's token in place well before it expires.
+        size_of = auto_refreshing(
+            env.cfg, clients, subject,
+            lambda: long_size(get_perp_positions(subject.trading_client, subject.app_session_id, mkt.market)),
+        )
         steps = step("drive stepwise liquidation", lambda: drive_stepwise_liquidation(
             faucet=faucet, market=mkt.market, entry=entry,
             round_tick=lambda x: round_tick(x, mkt.tick_size, mkt.price_precision),
@@ -153,7 +163,10 @@ class TestPerpTieredPositionReduction:
         assert len(reductions) >= cfg.min_pieces, "position shrank at a partial-reduction step"
         assert intermediate_open, "liquidated by pieces (open at an intermediate size), not all at once"
 
-        # cleanup — flatten both disposable accounts (best-effort).
+        # cleanup — flatten both disposable accounts (best-effort). maker's token was only ever
+        # refreshed at provisioning time -- by now it's certainly expired too.
+        refresh_account_token(env.cfg, clients, subject)
+        refresh_account_token(env.cfg, clients, maker)
         close_all_perp_positions(subject.order_client, subject.app_session_id, mkt.market)
         close_all_perp_positions(maker.order_client, maker.app_session_id, mkt.market)
 
@@ -161,7 +174,7 @@ class TestPerpTieredPositionReduction:
     # fat deposit on a tier-2 position so ONE reduction to tier-1 leaves equity >> tier-1
     # maintenance -> ladder heals and stops after one tier (no cascade).
     @pytest.mark.timeout(900)
-    def test_2_tc_liq_030_liquidation_reduces_exactly_one_tier_and_account_unlocks(self, env, new_funded_account):
+    def test_2_tc_liq_030_liquidation_reduces_exactly_one_tier_and_account_unlocks(self, env, clients, new_funded_account):
         assert env.faucet_url, "faucet host needed for mark injection (uat)"
         faucet = env.client_for(None, env.faucet_url)
         subject = step("provision subject", lambda: new_funded_account(
@@ -179,6 +192,11 @@ class TestPerpTieredPositionReduction:
         assert cfg.one_tier_open_notional_usd > tier1_cap, "open notional in tier 2 (> tier-1 cap)"
         assert cfg.one_tier_open_notional_usd <= tiers[1].max_notional_quote, "open notional in tier 2"
 
+        # provisioning + the reads above can, in aggregate, eat the 60s access_token TTL on
+        # their own (retries/backoff during funding especially) -- refresh right before the
+        # first real trading call rather than trust the provisioning-time refresh's margin.
+        refresh_account_token(env.cfg, clients, subject)
+        refresh_account_token(env.cfg, clients, maker)
         set_perp_leverage(subject.order_client, subject.app_session_id, mkt.market, cfg.leverage)
         set_perp_leverage(maker.order_client, maker.app_session_id, mkt.market, cfg.leverage)
 
@@ -200,7 +218,12 @@ class TestPerpTieredPositionReduction:
             type="liquidation_partial", market=mkt.market, page_size=200).items)
 
         # drive down, STOP after the first reduction (max_pieces=1), then restore the mark.
-        size_of = lambda: long_size(get_perp_positions(subject.trading_client, subject.app_session_id, mkt.market))
+        # this env's access_token TTL is 60s -- max_steps x step_hold_s can run for minutes, so
+        # size_of proactively refreshes subject's token in place well before it expires.
+        size_of = auto_refreshing(
+            env.cfg, clients, subject,
+            lambda: long_size(get_perp_positions(subject.trading_client, subject.app_session_id, mkt.market)),
+        )
         steps = step("drive one-tier reduction", lambda: drive_stepwise_liquidation(
             faucet=faucet, market=mkt.market, entry=entry,
             round_tick=lambda x: round_tick(x, mkt.tick_size, mkt.price_precision),
@@ -216,9 +239,15 @@ class TestPerpTieredPositionReduction:
         partials = get_perp_transaction_history(subject.trading_client, subject.app_session_id,
                                                 type="liquidation_partial", market=mkt.market, page_size=200).items
         reductions = [s for s in steps if s.size_after < s.size_before - 1e-9]
-        reduced_notional = long_after * mark
+        # price the reduction against the mark that was ACTUALLY active when it happened, not
+        # the later-restored one -- notional is mark-dependent, and comparing size-reduced-at-
+        # price-A against notional-measured-at-price-B (post-restore) is an inherent, unbounded
+        # confound, not something a wider tolerance band can fix.
+        reduction_mark = float(reductions[0].level) if reductions else mark
+        reduced_notional = long_after * reduction_mark
         record("one-tier result", {"openLong": open_long, "longAfter": long_after,
-                                   "reducedNotional": reduced_notional, "tier1Cap": tier1_cap,
+                                   "reducedNotional": reduced_notional, "reductionMark": reduction_mark,
+                                   "restoredMark": mark, "tier1Cap": tier1_cap,
                                    "reductionSteps": len(reductions),
                                    "partialRows": len(partials) - partials_before,
                                    "steps": [s.__dict__ for s in steps]})
@@ -239,5 +268,8 @@ class TestPerpTieredPositionReduction:
         assert long_after < open_long, "position was reduced"
         assert reduced_notional <= tier1_cap * 1.15, "reduced roughly to the tier-1 upper limit"
 
+        # maker's token was only ever refreshed at provisioning time -- by now it's certainly
+        # expired too. subject's was kept fresh by size_of's auto_refreshing above.
+        refresh_account_token(env.cfg, clients, maker)
         close_all_perp_positions(subject.order_client, subject.app_session_id, mkt.market)
         close_all_perp_positions(maker.order_client, maker.app_session_id, mkt.market)

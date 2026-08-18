@@ -3,8 +3,8 @@
 Context: **three repos, deployed independently to shared envs (uat / stage).**
 
 - **BE repo** — the trading / fee-engine / competition services.
-- **FE repo** — `yellow-pro-hub` (Next.js / React).
-- **This repo** (`neodax-api-tests`) — a **standalone black-box test harness** that targets a *deployed*
+- **FE repo** — `web-hub` (Next.js / React).
+- **This repo** (`nimbus-python`) — a **standalone black-box test harness** that targets a *deployed*
   environment (uat/stage), not a local build.
 
 The question this doc answers: given separate BE/FE repos, where should each kind of test live, and
@@ -37,7 +37,7 @@ is not.
 
 ## 2. FE-integrated E2E — the cheap, correct shape
 
-**Do not re-test fee math through the browser.** Driving 287k of volume or a 24h-YELLOW average by
+**Do not re-test fee math through the browser.** Driving 287k of volume or a 24h-NIM average by
 clicking is slow and flaky, and it duplicates what the API layer already proves.
 
 Instead, **reuse this repo's `fixtures/` + `lib/` as the *arrange* engine, drive the browser only for
@@ -57,7 +57,7 @@ browser projects alongside the existing `uat`/`stage` API projects, sharing the 
 Keep the browser set **small and journey-focused** (enroll, see discount, place order, see charged
 fee). Everything combinatorial stays in the API layer.
 
-### Auth is the real hurdle (yellow-pro-hub uses wallet-connect)
+### Auth is the real hurdle (web-hub uses wallet-connect)
 The API harness signs challenges directly with `ethers`. A browser can't click through a wallet
 extension easily. Two options, in order of preference:
 
@@ -94,13 +94,13 @@ events and schedules, not on push:
 Separate repos drift silently. Add a fast, cheap contract guard so a BE change that breaks the FE↔API
 shape fails *before* the full E2E:
 
-- **Single source of truth for the API schema** (OpenAPI): BE publishes it; this repo's `lib/schemas.ts`
-  (zod) and the FE's client validate against it. A schema change becomes a visible diff/PR.
+- **Single source of truth for the API schema** (OpenAPI): BE publishes it; this repo's `lib/schemas.py`
+  (pydantic) and the FE's client validate against it. A schema change becomes a visible diff/PR.
 - Or **consumer-driven contract tests** (Pact): the FE (consumer) publishes expectations, the BE
   (provider) verifies them in its own CI. Heavier, but decouples the repos properly.
 
-Minimum viable version: keep the zod schemas in this repo as the shared contract, and treat a schema
-validation failure in the E2E run as "contract drift" (they already do — `parsedJson` fails loudly).
+Minimum viable version: keep the pydantic schemas in this repo as the shared contract, and treat a
+schema validation failure in the E2E run as "contract drift" (they already do — `parsed_json` fails loudly).
 
 ---
 
@@ -129,7 +129,7 @@ Two inventories, each **anchored to a source of truth** (never hand-maintained l
 
 **API map — DONE.** `configs/api-endpoints.json` is the registry of BE routes in scope for this
 harness (the competition fee-engine + the trading/auth/faucet flows that feed it), extracted from the
-BE repos (`neodax`, `yellow-pro-hub` — both Gin; see `generatedFrom` + `excludedAreas`). `python
+BE repos (`nimbus`, `web-hub` — both Gin; see `generatedFrom` + `excludedAreas`). `python
 tools/api_coverage.py` cross-references it against the endpoints the tests actually call (scanned
 from `lib/`/`fixtures/`/`suites/`) and prints per-service coverage + two drift signals:
 - registry endpoints with no test → **coverage gaps** (what to test next),
@@ -138,11 +138,11 @@ from `lib/`/`fixtures/`/`suites/`) and prints per-service coverage + two drift s
 Baseline: **18/47 (38%)** — full on the flows we exercise, with clear gaps (order cancellation,
 positions read, leverage, rankings, `/me`, broadcast, internal fee-overlay). **Anti-drift:**
 regenerate the registry when the BE route files change (the `generatedFrom` pointers say where); the
-runtime `zod` schemas (`lib/schemas.ts`) already guard request/response *shape*, so the map only has
-to track the *surface*, not the payloads.
+runtime `pydantic` schemas (`lib/schemas.py`) already guard request/response *shape*, so the map only
+has to track the *surface*, not the payloads.
 
-**FE map — SUPERSEDED by a real UI e2e suite.** The original plan here was a Python Page Object
-Model (`e2e/pages/<Screen>.ts` + a testid-contract audit) — retired. It turned out the FE's
+**FE map — SUPERSEDED by a real UI e2e suite.** The original plan here was a Page Object Model
+driven via session injection + a testid-contract audit — retired. It turned out the FE's
 wallet-connect gate (Reown AppKit + wagmi) can't be satisfied by session injection alone: the
 Open Long/Short buttons stay `disabled` and the Open Orders/Positions panels show "Connect Wallet
 to Start" without a *real* wallet connection, even though the underlying API calls succeed in the

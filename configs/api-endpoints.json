@@ -1,31 +1,14 @@
 {
-  "$comment": "BE API endpoint registry — the 'map' of backend routes in scope for THIS harness (competition fee-engine + the trading/auth/faucet flows that feed it). GENERATED from the BE repos; regenerate when their route files change (see generatedFrom). Cross-referenced against test call sites by scripts/api-coverage.mjs (npm run api-coverage). Adjacent product areas are intentionally excluded (see excludedAreas) so coverage % reflects this harness's mission, not the whole platform.",
+  "$comment": "BE API endpoint registry — the 'map' of backend routes in scope for THIS harness (competition fee-engine + the trading/auth/faucet flows that feed it). GENERATED from the BE repos; regenerate when their route files change (see generatedFrom). Cross-referenced against test call sites by tools/api_coverage.py (python tools/api_coverage.py). Adjacent product areas are intentionally excluded (see excludedAreas) so coverage % reflects this harness's mission, not the whole platform.",
   "generatedFrom": {
-    "neodax": {
-      "repo": "/Users/pk/Documents/neodax",
-      "framework": "gin",
-      "routeFiles": [
-        "auth/cmd/auth/main.go (~L337-434)",
-        "trading-api/web_handlers.go (~L253-458)",
-        "trading-api/perp/routes.go (~L16-92)"
-      ]
-    },
-    "hub": {
-      "repo": "/Users/pk/Documents/yellow-pro-hub",
-      "framework": "gin",
-      "routeFiles": [
-        "internal/competition/http/router.go (~L18-36)",
-        "internal/competition/http/internal_fee_overlay.go (~L20-27)",
-        "internal/profile/http/router.go",
-        "internal/meta/http, internal/appconfig/http"
-      ]
-    },
-    "faucet": { "note": "external service (not in the neodax monorepo); route known from lib/funding.ts" }
+    "core-api": { "repo": "BE monorepo (auth + trading-api services)", "framework": "gin" },
+    "hub": { "repo": "BE competition/profile service", "framework": "gin" },
+    "faucet": { "note": "external service (not in the BE monorepo); route known from lib/funding.py" }
   },
   "excludedAreas": [
     "trading-api referral/partner/kol program (/referral/*, /partner/*, /kol/*)",
     "trading-api third-party market feeds (/api/cmc/v1/*, /api/coingecko/*)",
-    "trading-api portfolio (/portfolio/*), api-keys (/accounts/api-keys/*), send/withdrawal, reporting (/reporting/yellow-holders, insurance-fund history)",
+    "trading-api portfolio (/portfolio/*), api-keys (/accounts/api-keys/*), send/withdrawal, reporting (/reporting/nim-holders, insurance-fund history)",
     "auth email/social/i18n (/auth/email/*, /auth/clearnet-login, /auth/joinref, /auth/language)",
     "hub profile (/api/v1/me/profile*, /api/v1/profile/options), meta (/api/v1/_meta/info), app-config (/api/v1/app-config)",
     "health probes (/health, /health/live, /health/ready) on every service"

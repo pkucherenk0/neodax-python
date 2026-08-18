@@ -1,11 +1,11 @@
-"""response contracts. port of lib/schemas.ts (zod -> pydantic v2).
+"""response contracts (pydantic v2).
 
 validate SHAPE of response, not just status = core of API integration testing.
 catch silent contract drift (renamed field, changed type, dropped key) that status-only miss.
 tests parse responses through these via `parsed_json`.
 
 pydantic notes:
-  - `extra="allow"` == zod .passthrough()
+  - `extra="allow"` lets unknown fields pass through instead of rejecting the response
   - bare-array wire shapes use TypeAdapter (pydantic has no root array model)
   - financial amounts are STRINGS on this API. keep str, parse at call sites.
 """
@@ -65,7 +65,7 @@ class FeeTier(_Loose):
     tier_level: int
     tier_name: str
     campaign_volume_req_usd: str
-    campaign_yellow_req: str | None = None
+    campaign_nim_req: str | None = None
     spot_maker_bps: str
     spot_taker_bps: str
     perp_maker_bps: str
@@ -122,7 +122,7 @@ class _OverlayFees(_Loose):
     active: bool
     slug: str | None = None
     campaign_volume_usd: str | None = None
-    campaign_yellow_balance: str | None = None  # 24h hour-weighted average YELLOW holding
+    campaign_nim_balance: str | None = None  # 24h hour-weighted average NIM holding
     spot_maker_bps: str | None = None
     spot_taker_bps: str | None = None
     perp_maker_bps: str | None = None
@@ -250,7 +250,7 @@ class PerpOrderResponse(_Loose):
 
 # GET /perpetual/trades — perp fills key on `order_uuid` (spot uses `order_id`). fee =
 # quote-denominated (USDT). exec_type in trade | liquidation | liquidation_takeover | adl.
-# total = amount x price (signed). YEN-3325: a liquidation_takeover MUST persist price > 0.
+# total = amount x price (signed). PERP-3325: a liquidation_takeover MUST persist price > 0.
 class PerpTradeRow(_Loose):
     order_uuid: str
     market: str
@@ -342,7 +342,7 @@ class PerpCancelResponse(_Loose):
     message: str | None = None
 
 
-# GET /perpetual/market-risk-tiers — per-market leverage-based tiered-margin ladder (YEN-2544).
+# GET /perpetual/market-risk-tiers — per-market leverage-based tiered-margin ladder (PERP-2544).
 # public (no auth). rate/leverage/qty fields STRINGS. `max_position_qty` = tier UPPER
 # quote-notional cap (name historical — it is quote, not contracts).
 class PerpRiskTierRow(_Loose):
@@ -360,7 +360,7 @@ class PerpRiskTiersResponse(_Loose):
     tiers: list[PerpRiskTierRow]
 
 
-# GET /perpetual/position-history — closed-position lifecycle records (YEN-2548). financial
+# GET /perpetual/position-history — closed-position lifecycle records (PERP-2548). financial
 # fields = strings. empty ones dropped by proto omitempty -> optional.
 # close_reason in normal | liquidated | adl.
 class PerpPositionHistoryItem(_Loose):
@@ -420,7 +420,7 @@ class PerpPositionHistoryDetail(_Loose):
 
 
 # GET /perpetual/transaction/history — ledger rows. type filter incl. liquidation_partial (the
-# Stage0 tiered-reduction marker, YEN-2545). amount signed from user view.
+# Stage0 tiered-reduction marker, PERP-2545). amount signed from user view.
 class PerpTransactionItem(_Loose):
     transaction_id: int
     transaction_time: str
@@ -441,7 +441,7 @@ class PerpTransactionHistory(_Loose):
 
 
 # POST {faucet}/api/simulate-mark-price — inject mark-price event (kafka) to drive liquidation on
-# UAT (YEN-2545 test). echoes published values + event_id. no auth.
+# UAT (PERP-2545 test). echoes published values + event_id. no auth.
 class SimulateMarkPrice(_Loose):
     success: bool
     message: str | None = None

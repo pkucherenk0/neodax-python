@@ -2,7 +2,7 @@
 
 grug list. `@stateless` = no money. see [index](../../TEST_CASES.md).
 
-## suites/health.spec.ts
+## suites/test_health.py
 | tag | case | grug |
 |---|---|---|
 | @smoke @stateless | target environment responds | env alive. ping ok. |

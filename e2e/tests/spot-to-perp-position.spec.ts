@@ -28,6 +28,8 @@ import {
   assertPerpetualBalanceContains,
   assertPositionVisibleInUi,
   cancelAnyOpenOrder,
+  dismissWelcomeModalIfPresent,
+  dismissWhatsNewModalIfPresent,
   fetchLiveMarkPrice,
   matchRestingOrderWithApiCounterparty,
   openHomePage,
@@ -37,8 +39,26 @@ import {
 } from '../lib/actions';
 
 const ARRANGEMENT_PATH = path.resolve(__dirname, '../.arrangement.json');
-const FE_BASE = process.env.NEODAX_FE_BASE ?? 'https://yellow-neodax-client-uat.openware-account.workers.dev';
+// env/secret values can pick up a stray leading/trailing quote or whitespace depending on how
+// they were set (e.g. `gh secret set --body "$url"` where $url still has quotes in it) --
+// Chrome's Page.navigate rejects that outright ("Cannot navigate to invalid URL"), so strip
+// both before use. Confirmed shape in CI: exactly one extra char, not whitespace -- a stray
+// trailing quote is the leading suspect.
+const FE_BASE = (process.env.NIMBUS_FE_BASE ?? 'https://uat.nimbus.example.com')
+  .trim()
+  .replace(/^['"`]+|['"`]+$/g, '');
 const SCREENSHOT_DIR = path.resolve(__dirname, '../screenshots');
+
+// fail loud with an actual diagnosis instead of Chrome's opaque "invalid URL". Never print the
+// value itself (it may be a CI secret) -- structural facts only, safe regardless of masking.
+try {
+  new URL(FE_BASE);
+} catch {
+  throw new Error(
+    `NIMBUS_FE_BASE is not a valid URL after stripping quotes/whitespace: length=${FE_BASE.length}. ` +
+    'Check the env var/secret value directly.',
+  );
+}
 
 function loadArrangement(): Arrangement {
   if (!fs.existsSync(ARRANGEMENT_PATH)) {
@@ -74,6 +94,11 @@ test('spot to perp transfer, UI limit order matched by API counterparty, positio
 
   await openHomePage(page, FE_BASE);
   await connectMetaMask(page, context);
+  // two modals in a row for a fresh account: "Welcome to Yellow Pro" appears first (with a
+  // ~3s delay after connect), then "What's new" -- dismiss both before navigating anywhere
+  // else, or a later click can land on a still-open backdrop instead of its real target.
+  await dismissWelcomeModalIfPresent(page);
+  await dismissWhatsNewModalIfPresent(page, '01b');
   await takeScreenshot(page, '01-connected');
 
   await transferSpotBalanceToPerpetual(page, context, FE_BASE, '20000');

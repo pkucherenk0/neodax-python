@@ -1,4 +1,4 @@
-"""detailed-report recording helpers. port of fixtures/report.ts + reporters/detailed.ts glue.
+"""detailed-report recording helpers.
 
   - step()         wrap action so it shows as named ACTION with timing + pass/fail.
   - record()       attach JSON RECORD (fill, fee reading, snapshot) to test.
@@ -87,5 +87,5 @@ def record_check(*, name: str, passed: bool, detail: Any = None, info: bool = Fa
 
 
 def annotate(note: str) -> None:
-    """free-form note (port of test.info().annotations)."""
+    """free-form note attached to the test's report entry."""
     _notes.append(note)

@@ -6,7 +6,7 @@
  *   `page` and closes when done. This app's popup instead NAVIGATES IN PLACE between steps
  *   (connect -> its own SIWE-style signature request), so those calls hang forever waiting
  *   for a 'close' event that only fires after a step they never handle. Handled manually here.
- * - This app runs on state channels (Yellow/Nitrolite): some actions (e.g. placing an order)
+ * - This app runs on state channels: some actions (e.g. placing an order)
  *   sign a state update, not just a REST call, and pop a SECOND (or more) MetaMask
  *   confirmation independent of the connect flow. withOptionalApproval() below is generic
  *   over "however many popups this action happens to need, including zero".

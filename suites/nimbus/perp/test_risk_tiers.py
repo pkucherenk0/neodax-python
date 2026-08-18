@@ -1,4 +1,4 @@
-"""perp leverage-based tiered margin (YEN-2544). port of suites/neodax/perp/risk-tiers.spec.ts.
+"""perp leverage-based tiered margin (PERP-2544).
 
 GET /perpetual/market-risk-tiers contract + tier-param invariants liquidation module rely on.
 @stateless: endpoint public, no auth, read-only. configured perp market MUST have real seeded

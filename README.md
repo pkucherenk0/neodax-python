@@ -1,10 +1,9 @@
-# neodax-python
+# nimbus-python
 
-Two-layer test harness for NeoDax:
-- **API integration** (`suites/`, `tests/unit/`) — **Python port** of [`neodax-test`](../../neodax-test)
-  (the Playwright-TS original). **pytest + Playwright in API mode** (no browser), with
-  response-shape validation via [pydantic](https://docs.pydantic.dev). Domain logic lives in
-  `lib/`; specs are thin **Arrange → Act → Assert** wrappers.
+Two-layer test harness for Nimbus:
+- **API integration** (`suites/`, `tests/unit/`) — **pytest + Playwright in API mode** (no
+  browser), with response-shape validation via [pydantic](https://docs.pydantic.dev). Domain
+  logic lives in `lib/`; specs are thin **Arrange → Act → Assert** wrappers.
 - **UI e2e** (`e2e/`) — a separate Node/Playwright project driving the real FE through a real
   MetaMask wallet (dappwright). Lives outside the Python suite because dappwright (real
   extension automation) only exists in Node. See `e2e/README` / `AGENTS.md` for why and how.
@@ -34,7 +33,7 @@ pytest -n 2 -m stateless                      # parallel via xdist (keep workers
 cd e2e && npm install && npx playwright install chromium && npx playwright test  # UI e2e (separate project)
 ```
 
-Env is chosen with `--env` (port of the TS `--project`):
+Env is chosen with `--env`:
 
 | `--env` | Wallets | Faucet |
 |---|---|---|
@@ -43,8 +42,8 @@ Env is chosen with `--env` (port of the TS `--project`):
 
 ## Safety rails (read before running trading suites)
 
-- **The default `pytest` run excludes `trades`/`serial`** (see `pytest.ini` addopts) —
-  stronger than the TS original. Trading lanes are opt-in via `-m`.
+- **The default `pytest` run excludes `trades`/`serial`** (see `pytest.ini` addopts). Trading
+  lanes are opt-in via `-m`.
 - There are **no retries** and none may ever be added on `trades`/`serial` — a retry re-places
   live orders (double volume / lost funds). Never install pytest-rerunfailures here.
 - `serial` suites share module state between ordered phases: run them in ONE process (no `-n`).
@@ -72,7 +71,7 @@ python tools/red_green.py suites/<file>.py -k "name"   # prove a spec can fail: 
                                                     # expected values, confirm it goes RED.
                                                     # trades/serial need --force (places live orders)
 python tools/api_coverage.py                      # BE endpoint registry × tests: coverage + drift
-# mutation testing (Stryker in the TS original): use `mutmut` against lib/ — not yet wired.
+# mutation testing: `mutmut` against lib/ — not yet wired.
 ```
 
 - **Independent oracle:** expected values come from the BE code / spec / pydantic contract /
@@ -90,8 +89,8 @@ fixtures/     env / fresh_wallet / account / spot_maker / perp_maker / new_funde
               — the ONLY way specs get clients & accounts. + detailed reporter hooks.
 conftest.py   wires fixtures/ into pytest (pytest_plugins) + --env CLI option
 configs/      typed run params (no CLI-flag archaeology)
-suites/       competition/ + neodax/ ; TEMPLATE_template.py to copy
-tests/unit/   offline unit tests for pure lib math (run first — they verify the port)
+suites/       competition/ + nimbus/ ; TEMPLATE_template.py to copy
+tests/unit/   offline unit tests for pure lib math (run first)
 tools/        red_green.py (anti-false-positive) + api_coverage.py (endpoint registry × tests)
               + arrange_metamask_e2e.py (funds accounts for e2e/, see below)
 
@@ -99,24 +98,6 @@ e2e/          SEPARATE Node/Playwright project — UI e2e via a real MetaMask wa
               lib/metamask.ts (connect/approve), lib/actions.ts (named page actions), tests/.
               Not pytest — `cd e2e && npx playwright test`. See e2e/README or AGENTS.md.
 ```
-
-## TS → Python mapping (for readers of the original)
-
-| TS original | here |
-|---|---|
-| `@playwright/test` fixtures (`fixtures/index.ts`) | pytest fixtures in `conftest.py` |
-| zod schemas (`lib/schemas.ts`) | pydantic v2 models (`lib/schemas.py`); `.passthrough()` → `extra="allow"` |
-| `expect.poll(...)` | `lib/poll.py: poll_until(...)` |
-| `test.step` / `attach` / reporter | `lib/report.py` + conftest hooks → same `detailed-report.md` |
-| `--project=uat` | `--env=uat` |
-| `@stateless` title tags | pytest markers (`-m stateless`) |
-| ethers `Wallet.createRandom()` | `eth_account.Account.create()` |
-| async background `holdMarkPrice` | inline `MarkHolder.pump()` inside the poll loop (sync API) |
-| `retries: 0` in config | pytest default (no retries) + pytest.ini warning — keep it that way |
-
-`TEST_STRATEGY.md`, `TEST_CASES.md` and `docs/test-cases/` are copied from the TS original —
-domain content applies as-is; where they mention `npm`/`npx playwright` commands, use the
-pytest equivalents above.
 
 ## Contributing
 

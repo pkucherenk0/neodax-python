@@ -1,4 +1,4 @@
-"""negative control. port of suites/competition/non-enrolled-fees.spec.ts.
+"""negative control.
 
 overlay must NEVER apply to an account that never enrolled. its fees follow standard schedule
 only. perp_maker fixture is non-enrolled counterparty. roles flip vs enrolled-subject tests:

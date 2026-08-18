@@ -1,4 +1,4 @@
-"""HTTP resilience. port of lib/http.ts. two layers:
+"""HTTP resilience. two layers:
 
   1. rate limiter, proactively space calls (avoid 429 first place)
   2. retry loop for 429 / 5xx / network errors, backoff + Retry-After
@@ -63,8 +63,8 @@ def _backoff(attempt: int) -> float:
     return min(30.0, 0.5 * (2**attempt)) + random.random() * 0.25
 
 
-DEFAULT_RPS = float(os.environ.get("NEODAX_RPS", "5"))
-DEFAULT_MAX_RETRIES = int(os.environ.get("NEODAX_MAX_RETRIES", "4"))
+DEFAULT_RPS = float(os.environ.get("NIMBUS_RPS", "5"))
+DEFAULT_MAX_RETRIES = int(os.environ.get("NIMBUS_MAX_RETRIES", "4"))
 
 
 @dataclass(frozen=True)

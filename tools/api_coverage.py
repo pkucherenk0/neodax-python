@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""API endpoint coverage report. port of tools/api-coverage.mjs.
+"""API endpoint coverage report.
 
 cross-ref BE endpoint registry (configs/api-endpoints.json — "map" of what backends expose)
 against endpoints this harness actually calls (scanned from lib/ + suites/ + fixtures/ +

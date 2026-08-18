@@ -1,4 +1,4 @@
-"""account funding. port of lib/funding.ts. UAT-only (need faucet).
+"""account funding. UAT-only (need faucet).
 
 faucet USDT -> spot, then transfer spot -> perps. both credits ASYNC, callers poll balance
 until settle. every function take ResilientClient already scoped to right host.

@@ -1,4 +1,4 @@
-"""spot orders — non-filling lifecycle. port of suites/neodax/spot/orders.spec.ts.
+"""spot orders — non-filling lifecycle.
 
 rest GTC limit BUY well below market, see in open_orders + orders history, cancel, confirm
 reserved quote (USDT) released. @trades (no counterparty, never fills). teardown cancels

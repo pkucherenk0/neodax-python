@@ -1,4 +1,4 @@
-"""spot order placement + fill readback. port of lib/spot.ts."""
+"""spot order placement + fill readback."""
 from __future__ import annotations
 
 from dataclasses import dataclass

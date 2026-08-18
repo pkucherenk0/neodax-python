@@ -1,4 +1,4 @@
-"""ordered fee-tier flow (@serial). port of suites/competition/perp-fee-tier.spec.ts.
+"""ordered fee-tier flow (@serial).
 
 ONE process, phases share accumulated comp volume (module-level `flow` state). enrolled fresh
 account starts at Base tier. driving perp volume past VIP1 campaign threshold makes overlay

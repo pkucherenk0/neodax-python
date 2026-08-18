@@ -1,4 +1,4 @@
-"""perp acct surface. port of suites/neodax/perp/account.spec.ts.
+"""perp acct surface.
 
 read collateral balance + set/read initial leverage. @trades funded acct, open no positions.
 tests independent. detail report: results/latest/detailed-report.md
