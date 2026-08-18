@@ -9,7 +9,7 @@ name: perp-spot-tests
 # NOTE: this deliberately runs @trades and @serial lanes too, which place REAL
 # orders on live UAT and spend real (throwaway UAT) balance on every push. That
 # was an explicit choice — see README.md "Safety rails" for what those markers
-# mean before changing this file. Also runs the real MetaMask e2e/ suite (its own
+# mean before changing this file. Also runs the e2e/ UI suite (mock wallet, its own
 # job, e2e-ui) — but ONLY on pushes to main (see that job's `if:`), since
 # pr-check.yml already runs it (blocking) for PR-branch pushes, and running both
 # concurrently races two live-order sessions against the same thin shared market.
@@ -166,15 +166,13 @@ jobs:
         working-directory: e2e
         run: npm ci
 
-      - name: Install Playwright browser + OS deps (+ xvfb for headed MetaMask popups)
+      - name: Install Playwright browser + OS deps
         working-directory: e2e
-        run: |
-          sudo apt-get update && sudo apt-get install -y xvfb
-          npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium
 
-      - name: Real MetaMask e2e (spot->perp transfer, order, API counterparty match, position visible)
+      - name: Real UI e2e (mock wallet -- spot->perp transfer, order, API counterparty match, position visible)
         working-directory: e2e
-        run: xvfb-run --auto-servernum npm test
+        run: npm test
 
       - name: Upload e2e artifacts (screenshots + failure traces)
         if: always()

@@ -2,9 +2,9 @@ name: pr-check
 
 # PR-blocking gate. Two required checks:
 #  - safe-lane: fast (stateless + smoke), no live orders, no faucet spend.
-#  - e2e-ui: real MetaMask (dappwright) browser automation against the deployed UAT FE,
-#    places real live orders on UAT. Deliberately blocking too (explicit choice, heavier
-#    than safe-lane) -- see e2e/README / AGENTS.md for what the suite does.
+#  - e2e-ui: real browser automation (mock EIP-1193 wallet, no real MetaMask extension) against
+#    the deployed UAT FE, places real live orders on UAT. Deliberately blocking too (explicit
+#    choice, heavier than safe-lane) -- see e2e/README / AGENTS.md for what the suite does.
 
 on:
   pull_request:
@@ -68,15 +68,13 @@ jobs:
         working-directory: e2e
         run: npm ci
 
-      - name: Install Playwright browser + OS deps (+ xvfb for headed MetaMask popups)
+      - name: Install Playwright browser + OS deps
         working-directory: e2e
-        run: |
-          sudo apt-get update && sudo apt-get install -y xvfb
-          npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium
 
-      - name: Real MetaMask e2e (spot->perp transfer, order, API counterparty match, position visible)
+      - name: Real UI e2e (mock wallet -- spot->perp transfer, order, API counterparty match, position visible)
         working-directory: e2e
-        run: xvfb-run --auto-servernum npm test
+        run: npm test
 
       - name: Upload e2e artifacts (screenshots + failure traces)
         if: always()

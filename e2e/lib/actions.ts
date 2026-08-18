@@ -6,9 +6,9 @@
  * this repo's Python lib/ + suites/ already use.
  */
 import { expect } from '@playwright/test';
-import { BrowserContext, Locator, Page } from 'playwright-core';
+import { Locator, Page } from 'playwright-core';
 import path from 'node:path';
-import { withOptionalApproval, Arrangement } from './metamask';
+import { Arrangement } from './wallet';
 
 const SCREENSHOT_DIR = path.resolve(__dirname, '../screenshots');
 
@@ -18,10 +18,18 @@ export async function takeScreenshot(page: Page, name: string): Promise<void> {
 
 export async function openHomePage(page: Page, feBase: string): Promise<void> {
   await page.goto(feBase);
-  // first render after navigation -- CI runners are slower than local dev (confirmed by the
-  // Deposit-link timeout below), give it real headroom, not the 5s locator default.
-  await expect(page.getByRole('button', { name: 'Connect' }).first()).toBeVisible({ timeout: 15000 });
   await takeScreenshot(page, '00-home-before-connect');
+}
+
+export async function waitForWalletConnected(page: Page, timeoutMs = 20_000): Promise<void> {
+  // with the mock wallet installed (lib/wallet.ts) the app auto-connects on its own -- confirmed
+  // live: no Connect-button click needed, and the button can already be gone by the time code
+  // goes looking for it. Confirmed live too: the "Welcome to Yellow Pro" modal can appear WHILE
+  // waiting and cover the Deposit link -- it even echoes "Connected as 0x..." itself, proof the
+  // connection already succeeded. Accept either signal instead of assuming the header renders
+  // first every time.
+  const connected = page.getByRole('link', { name: 'Deposit' }).or(page.getByText(/Connected as/));
+  await expect(connected.first()).toBeVisible({ timeout: timeoutMs });
 }
 
 export async function dismissWelcomeModalIfPresent(page: Page): Promise<void> {
@@ -112,7 +120,6 @@ export async function refreshTransferFromBalanceViaDirectionToggle(dialog: Locat
 
 export async function transferSpotBalanceToPerpetual(
   page: Page,
-  context: BrowserContext,
   feBase: string,
   amount: string,
 ): Promise<void> {
@@ -135,7 +142,7 @@ export async function transferSpotBalanceToPerpetual(
 
   await dialog.locator('input').first().fill(amount, { timeout: 10000 });
   await takeScreenshot(page, '02g-transfer-amount-filled');
-  await withOptionalApproval(page, context, () => dialog.getByRole('button', { name: 'Transfer' }).click({ timeout: 10000 }));
+  await dialog.getByRole('button', { name: 'Transfer' }).click({ timeout: 10000 });
   await takeScreenshot(page, '02h-transfer-submitted');
   await expect(page.locator('[role=dialog]')).toHaveCount(0, { timeout: 15000 });
 }
@@ -162,7 +169,6 @@ export async function fetchLiveMarkPrice(arrangement: Arrangement): Promise<numb
 
 export async function placeRestingPerpLimitBuy(
   page: Page,
-  context: BrowserContext,
   feBase: string,
   market: string,
   price: string,
@@ -198,11 +204,11 @@ export async function placeRestingPerpLimitBuy(
   await inputs.nth(1).fill(size);
   await takeScreenshot(page, '04-order-form-filled');
 
-  // This app runs on state channels -- placing an order may itself need a signed approval,
-  // separate from the earlier connect signature. withOptionalApproval() handles that if/when
-  // it shows up, and no-ops if it doesn't.
+  // This app runs on state channels -- placing an order may itself need a signed state update,
+  // separate from the earlier connect signature. The mock wallet (lib/wallet.ts) answers any
+  // such request synchronously, no popup to wait for.
   const openLongBtn = page.getByRole('button', { name: 'Open Long' });
-  await withOptionalApproval(page, context, () => openLongBtn.click());
+  await openLongBtn.click();
   await expect(openLongBtn).toBeEnabled(); // form usable again -> submission round-trip done
   await takeScreenshot(page, '04b-after-open-long');
 }
@@ -280,7 +286,7 @@ export async function assertPositionVisibleInUi(page: Page, marketBase: string, 
   await takeScreenshot(page, '06-position-open');
 }
 
-export async function cancelAnyOpenOrder(page: Page, context: BrowserContext): Promise<void> {
+export async function cancelAnyOpenOrder(page: Page): Promise<void> {
   // best-effort teardown: if our order is somehow still resting (e.g. an earlier step threw
   // before the API match), cancel it via the UI rather than leave it as trash for future runs.
   await page
@@ -290,6 +296,6 @@ export async function cancelAnyOpenOrder(page: Page, context: BrowserContext): P
     .catch(() => {});
   const cancelBtn = page.getByRole('button', { name: 'Cancel' }).first();
   if (await cancelBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-    await withOptionalApproval(page, context, () => cancelBtn.click()).catch(() => {});
+    await cancelBtn.click().catch(() => {});
   }
 }
