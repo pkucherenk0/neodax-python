@@ -59,9 +59,20 @@ export async function connectMetaMask(page: Page, context: BrowserContext): Prom
 
   if (!popup.isClosed()) {
     // didn't close on its own -> the connect approval navigated to the follow-up signature
-    // request, which still needs confirming.
-    await popup.getByRole('button', { name: 'Confirm' }).click();
-    await popup.waitForEvent('close', { timeout: 15000 }).catch(() => {});
+    // request, which still needs confirming. Confirmed live (CI trace + screenshot): the
+    // popup itself can be a perfectly normal, well-formed "Approve Signature Request" at the
+    // exact moment of failure -- correct network/domain/challenge, Confirm button visible and
+    // enabled -- then close on its own in the gap between this check and the click actually
+    // landing ("Target page, context or browser has been closed"). That's the SAME race the
+    // check above already treats as a valid outcome for step 1 (popup closes without needing
+    // a second step) -- extend the same tolerance here instead of failing the whole test on a
+    // race we already know can happen and isn't actually wrong.
+    try {
+      await popup.getByRole('button', { name: 'Confirm' }).click({ timeout: 10000 });
+      await popup.waitForEvent('close', { timeout: 15000 }).catch(() => {});
+    } catch (err) {
+      if (!popup.isClosed()) throw err; // only swallow if it's ACTUALLY gone, not some other failure
+    }
   }
   await page.bringToFront();
 }
