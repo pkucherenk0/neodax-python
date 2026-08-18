@@ -46,10 +46,8 @@ def _sig_hex(sig: bytes) -> str:
 
 
 def _mint_and_auth(auth_ctx, wallet) -> tuple[str, str]:
-    """returns (checksummed_address, access_token). force EIP-55 casing here, once -- confirmed
-    live: the faucet does NOT normalize casing against the trading account, so any mismatch
-    silently drops a deposit (reports success, credit never lands). every downstream call
-    (faucet, trading, the written .arrangement.json) must use this SAME address string."""
+    """returns (checksummed_address, access_token). force EIP-55 casing -- faucet doesn't
+    normalize it, mismatch silently drops a deposit. see e2e/README.md."""
     address = to_checksum_address(wallet.address)
     ch = auth_ctx.post("/auth/challenge", data={"wallet_address": address})
     assert ch.ok, f"auth challenge failed: HTTP {ch.status} {ch.text()}"

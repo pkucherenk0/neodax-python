@@ -50,19 +50,12 @@ class TestPerpOrders:
         assert mark > 0, "perp mark price available"
         amount = size_amount(perp_trade.order_notional_usd, mark, mkt)
         rest_price = round_tick(mark * 0.95, mkt.tick_size, mkt.price_precision)
-        # ground truth for the locked margin: a LIMIT order reserves exactly
-        # qty x price / leverage, no buffer (the 5% market-order slippage buffer doesn't
-        # apply to limit orders) and no fee (fee is checked for sufficiency but NOT included
-        # in the locked amount). confirmed against BE source:
-        # portfolio_manager_perp/grpc/account_service/converters.go CalculateInitialMargin
-        # (~L218-249) and lock_oneway.go/lock_hedge.go (lockedMargin passed to
-        # LockBalanceAmount, separate from feeToOpen); see also
-        # TestLockPerpAsset_LockMarginOnly_NotMarginPlusFee in lock_test.go.
+        # ground truth: limit order locks qty x price / leverage exactly. no slippage buffer
+        # (market-only), no fee (checked, not locked). src: converters.go CalculateInitialMargin
+        # ~L218-249, lock_oneway.go/lock_hedge.go, TestLockPerpAsset_LockMarginOnly_NotMarginPlusFee.
         reserved_margin = (float(amount) * float(rest_price)) / LEVERAGE
-        # the shared `account` fixture only confirms perp settled to >=90% of `funding.perp_usdt`
-        # (not the exact full amount) before handing the account back -- see the identical race
-        # documented in suites/nimbus/spot/test_orders.py. settle "before" to the fixture's own
-        # known funded baseline first, rather than trusting whatever single read lands first.
+        # `account` fixture only confirms perp settled >=90% of funding.perp_usdt, not exact.
+        # settle "before" to fixture's known baseline first (same race as spot/test_orders.py).
         expected_baseline = float(funding.perp_usdt)
         before = poll_until(
             lambda: get_perp_balance_snapshot(account.trading_client, account.app_session_id),
@@ -119,13 +112,9 @@ class TestPerpOrders:
             lambda: any(o.order_id == order_uuid for o in get_perp_open_orders(account.trading_client, account.app_session_id, mkt.market)),
             lambda seen: not seen, timeout_s=15, message="cancelled order left open_orders",
         )
-        # release target is `before` -- justified now that the lock itself was proven exact
-        # (reserved_margin == before - during above), so full release must land back on
-        # exactly `before`. generous timeout: this is the step that occasionally lags for
-        # real (not a design flaw, just genuine eventual-consistency). Capture the value
-        # poll_until itself confirmed -- a SEPARATE fresh read right after can hit a
-        # different backend replica/cache and observe a different number even though the
-        # poll already succeeded against a consistent one.
+        # release target `before` valid since lock was proven exact above. real eventual-
+        # consistency lag, not a bug -- generous timeout. capture the value poll_until itself
+        # confirmed, not a fresh re-read (can hit a different replica/cache and disagree).
         after_available = poll_until(
             lambda: get_perp_balance_snapshot(account.trading_client, account.app_session_id).available,
             lambda avail: abs(avail - before.available) < 1e-6, timeout_s=30,

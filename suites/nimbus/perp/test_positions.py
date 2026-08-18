@@ -106,12 +106,9 @@ class TestPerpPositionLifecycle:
 
     @pytest.mark.timeout(180)
     def test_2_closing_the_position_flattens_it_and_releases_margin(self, account, perp_maker):
-        # arrange — phase 1's position must exist. close the ACTUAL open size, not a fresh
-        # notional/mark recompute: mark moves live between test_1 (open) and here, so
-        # re-deriving amount from a new mark price can drift above the real position on
-        # either leg -> reduce-only rejected as insufficient_position. floor to the market's
-        # step size, matching flatten_perp_pair. perp_maker rests reduce-only buy, new best
-        # bid, so subject's reduce-only sell has a guaranteed counterparty.
+        # arrange — close ACTUAL open size, not a fresh mark recompute (mark moves live,
+        # drift -> insufficient_position). floor to step size, matches flatten_perp_pair.
+        # maker rests reduce-only buy as guaranteed counterparty.
         mkt = state["mkt"]
         assert mkt is not None, "phase 1 resolved the market"
         before = get_perp_balance_snapshot(account.trading_client, account.app_session_id)
