@@ -1,15 +1,6 @@
 /**
  * Reusable MetaMask (dappwright) helpers, shared across tests/*.spec.ts.
- *
- * Findings this is built on (confirmed via manual recording during development):
- * - dappwright's own wallet.approve()/sign() assume every popup step opens a NEW Playwright
- *   `page` and closes when done. This app's popup instead NAVIGATES IN PLACE between steps
- *   (connect -> its own SIWE-style signature request), so those calls hang forever waiting
- *   for a 'close' event that only fires after a step they never handle. Handled manually here.
- * - This app runs on state channels: some actions (e.g. placing an order)
- *   sign a state update, not just a REST call, and pop a SECOND (or more) MetaMask
- *   confirmation independent of the connect flow. withOptionalApproval() below is generic
- *   over "however many popups this action happens to need, including zero".
+ * See ../README.md "Known issues / workarounds" for the why behind the popup handling below.
  */
 import { expect } from '@playwright/test';
 import { BrowserContext, Page } from 'playwright-core';
@@ -20,10 +11,9 @@ import { bootstrap, Dappwright, getWallet } from '@tenkeylabs/dappwright';
 // bootstrap() -- the connect flow itself just needed manual handling, see connectMetaMask().
 export const METAMASK_VERSION = '13.17.0';
 
-/** Onboard a fresh MetaMask instance directly with `mnemonic` as its ONE account -- no
- * "import a 2nd account then switch to it" step/ambiguity. Always use a freshly-generated
- * mnemonic per test run (see tools/arrange_metamask_e2e.py) -- never reuse one across runs,
- * a reused account accumulates leftover orders/positions from prior runs. */
+/** Onboard a fresh MetaMask instance with `mnemonic` as its one account. Use a freshly-generated
+ * mnemonic per run (see tools/arrange_metamask_e2e.py) -- a reused account accumulates leftover
+ * orders/positions. */
 export async function bootstrapMetaMask(mnemonic: string): Promise<{ wallet: Dappwright; context: BrowserContext }> {
   const [, , context] = await bootstrap('', {
     wallet: 'metamask',
@@ -35,12 +25,8 @@ export async function bootstrapMetaMask(mnemonic: string): Promise<{ wallet: Dap
   return { wallet, context };
 }
 
-/** Click Connect -> MetaMask -> approve the connect popup -> approve its follow-up
- * signature request IF one shows up (same popup, navigates in place -- see file header).
- * Whether the follow-up signature request happens is app/session-state dependent -- CI runs
- * observed the popup sometimes closing right after the connect approval with no second step,
- * where local dev runs always saw the two-step flow. Race both outcomes instead of assuming
- * the popup stays open. */
+/** Click Connect -> MetaMask -> approve the connect popup -> approve its follow-up signature
+ * request IF one shows up (same popup, navigates in place). See ../README.md. */
 export async function connectMetaMask(page: Page, context: BrowserContext): Promise<void> {
   await page.getByRole('button', { name: 'Connect' }).first().click();
   await expect(page.getByText('MetaMask', { exact: true })).toBeVisible();
@@ -58,20 +44,13 @@ export async function connectMetaMask(page: Page, context: BrowserContext): Prom
   ]);
 
   if (!popup.isClosed()) {
-    // didn't close on its own -> the connect approval navigated to the follow-up signature
-    // request, which still needs confirming. Confirmed live (CI trace + screenshot): the
-    // popup itself can be a perfectly normal, well-formed "Approve Signature Request" at the
-    // exact moment of failure -- correct network/domain/challenge, Confirm button visible and
-    // enabled -- then close on its own in the gap between this check and the click actually
-    // landing ("Target page, context or browser has been closed"). That's the SAME race the
-    // check above already treats as a valid outcome for step 1 (popup closes without needing
-    // a second step) -- extend the same tolerance here instead of failing the whole test on a
-    // race we already know can happen and isn't actually wrong.
+    // follow-up signature request needs confirming. popup can self-close mid-click
+    // (timing race, see ../README.md) -- tolerate that same as the check above.
     try {
       await popup.getByRole('button', { name: 'Confirm' }).click({ timeout: 10000 });
       await popup.waitForEvent('close', { timeout: 15000 }).catch(() => {});
     } catch (err) {
-      if (!popup.isClosed()) throw err; // only swallow if it's ACTUALLY gone, not some other failure
+      if (!popup.isClosed()) throw err; // only swallow if it's actually gone
     }
   }
   await page.bringToFront();

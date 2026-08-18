@@ -58,8 +58,7 @@ def total_abs_size(positions) -> float:
     return sum(abs(float(p.amount)) for p in positions)
 
 
-# module state: teardown restores BOTH injected marks even on raise; test 2 scans trades
-# captured by test 1.
+# module state: teardown restores both marks even on raise. test 2 reuses test 1's trades.
 state: dict = {"restore": [], "captured_trades": [], "liquidated": False}
 
 
@@ -96,23 +95,14 @@ class TestPerpLiquidationTakeoverPriceIntegrity:
 
         amt_a = size_amount(cfg.long_notional_usd, mark_a, long_mkt)
         amt_b = size_amount(cfg.short_notional_usd, mark_b, short_mkt)
-        # provisioning + the reads above can, in aggregate, eat the 60s access_token TTL on
-        # their own (retries/backoff during funding especially) -- refresh right before the
-        # first real trading call rather than trust the provisioning-time refresh's margin.
+        # token ttl 60s. provision+reads can eat it. refresh before first trade call.
         for acct in (subject, maker):
             refresh_account_token(env.cfg, clients, acct)
             set_perp_leverage(acct.order_client, acct.app_session_id, long_mkt.market, cfg.leverage)
             set_perp_leverage(acct.order_client, acct.app_session_id, short_mkt.market, cfg.leverage)
 
-        # order matters here: open the SMALL leg B first, while the account is still fully
-        # funded and untouched by any position's mark-to-market swings. Confirmed live: opening
-        # the large dominant leg A first can immediately eat most of the deposit as unrealized
-        # loss from its own price move on this thin market (~4% observed in minutes, well
-        # within normal volatility here) -- leg B's order-placement margin CHECK then rejects
-        # it as insufficient_margin even though the account has plenty of nominal equity,
-        # because the one volatile position already crowded it out. Opening the small,
-        # low-volatility leg FIRST secures its margin against the untouched buffer; leg A's own
-        # volatility afterward can't retroactively fail a margin check that already passed.
+        # open small leg B first, big leg A last -- big leg's own price move eats margin,
+        # fails leg B's check if opened first. see CONVENTIONS.md known-gotchas.
 
         # leg B — subject opens a small SHORT vs maker's resting buy (this leg receives the clamped price).
         top_b = get_perp_top_of_book(subject.trading_client, short_mkt.market)
@@ -156,9 +146,7 @@ class TestPerpLiquidationTakeoverPriceIntegrity:
         # as profitable in Step2).
         crash_mark = round_tick(entry_a * cfg.crash_to_pct, long_mkt.tick_size, long_mkt.price_precision)
         flat_mark = round_tick(entry_b * (1 + cfg.short_flat_above_pct), short_mkt.tick_size, short_mkt.price_precision)
-        # this env's access_token TTL is 60s -- cfg.liquidate_timeout_s (120s default) can
-        # easily outlive it, so the size_of callback (polled every ~1.5s for the whole wait)
-        # proactively refreshes subject's token in place well before it expires.
+        # ttl 60s < liquidate_timeout_s (120s default). size_of callback refreshes token each poll.
         total_size_of = auto_refreshing(
             env.cfg, clients, subject,
             lambda: total_abs_size(get_perp_positions(subject.trading_client, subject.app_session_id)),
@@ -173,8 +161,7 @@ class TestPerpLiquidationTakeoverPriceIntegrity:
         ))
         for r in state["restore"]:
             restore_mark_price(faucet, r["market"], r["mark"])  # restore ASAP (blast radius)
-        # trade-ingest poll below (up to cfg.trade_ingest_timeout_s, default 60s) is its own
-        # long wait -- start it with a guaranteed-fresh token too.
+        # trade-ingest poll is its own long wait. refresh token before it too.
         refresh_account_token(env.cfg, clients, subject)
 
         # takeover trades land async. poll until liquidation-type fills appear.
@@ -214,8 +201,7 @@ class TestPerpLiquidationTakeoverPriceIntegrity:
                      detail=[t.__dict__ for t in neg_price])
         record_check(name="no liquidation trade has a negative total", passed=len(neg_total) == 0,
                      detail=[t.__dict__ for t in neg_total])
-        # residual gap (agent-confirmed): clamp maps <=0 -> 0, so a takeover still lands at
-        # price=0 (not a real market price). shipped fix guarantees >=0, not >0 -> observational.
+        # clamp maps <=0 -> 0. price=0 not a real market price. fix guarantees >=0, not >0.
         record_check(name="takeover price=0 is not a real market price (residual gap)", passed=True, info=True,
                      detail={"zeroPriced": [t.__dict__ for t in zero_priced]})
 
@@ -224,17 +210,14 @@ class TestPerpLiquidationTakeoverPriceIntegrity:
         assert short_b > 0, "small short leg opened"
         assert liq.triggered, "account fully liquidated (batch takeover ran)"
         assert len(takeovers) > 0, "a real liquidation_takeover trade was produced"
-        # NON-VACUOUS gate: the scenario actually drove a raw settlement price <=0 (clamped to
-        # 0). without this the test proves nothing. removing the clamp turns this red.
+        # non-vacuous gate: clamp actually fired. remove clamp -> red.
         assert len(zero_priced) > 0, "the batch clamp fired (a takeover clamped to exactly 0)"
         # PERP-3325 invariant — the bug gate. red on buggy backend, green with the clamp.
         for t in liq_trades:
             assert t.price >= 0, f"liquidation trade price non-negative (exec_type={t.exec_type}, market={t.market})"
             assert t.total >= 0, f"liquidation trade total non-negative (exec_type={t.exec_type}, market={t.market})"
 
-        # cleanup — flatten maker in both markets best-effort (subject already fully liquidated).
-        # maker's token was only ever refreshed at provisioning time -- by now (after both long
-        # waits above) it's certainly expired too.
+        # cleanup: flatten maker both markets. maker token stale since provisioning, refresh first.
         refresh_account_token(env.cfg, clients, maker)
         close_all_perp_positions(maker.order_client, maker.app_session_id, long_mkt.market)
         close_all_perp_positions(maker.order_client, maker.app_session_id, short_mkt.market)
