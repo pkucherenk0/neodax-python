@@ -56,7 +56,8 @@ Env is chosen with `--env`:
 - `stateless` — independent, parallel-safe, no funding. **Default; prefer this.**
 - `smoke` — connectivity/health, fail-fast.
 - `trades` — places real orders; no retries ever.
-- `serial` — ordered flows (fee-tier, position lifecycle, liquidation); one process.
+- `serial` — ordered flows (fee-tier, position lifecycle, liquidation); xdist-safe, ordered
+  classes carry `@pytest.mark.xdist_group` (`-n N --dist loadgroup`).
 
 UI e2e tests (real MetaMask, real FE) are a separate Node project — see `e2e/`, not a pytest marker.
 

@@ -107,12 +107,15 @@ position_history = PositionHistoryCfg()
 
 @dataclass(frozen=True)
 class TieredReductionCfg:
-    """perp tiered position reduction / Stage0 liquidation (PERP-2545). thin market (SUI) so a
-    boundary-spanning position is fundable. maker seeds both the open fill and the reduce bid.
-    AS-BUILT: engine does ONE Stage0 partial peel then Stage1 full close -> min_pieces=1.
-    WARNING: mark injection is market-wide (can liquidate others) -> thin market + restore."""
+    """perp tiered position reduction / Stage0 liquidation (PERP-2545). maker seeds both the open
+    fill and the reduce bid. AS-BUILT: engine does ONE Stage0 partial peel then Stage1 full close
+    -> min_pieces=1. WARNING: mark injection is market-wide (can liquidate others) -> restore.
+    test_1 (piecewise) and test_2 (TC-LIQ-030) run on SEPARATE markets on purpose -- both
+    mark-inject, same market would corrupt each other if run concurrently (xdist). see
+    CONVENTIONS.md known-gotchas for the full UAT market allocation."""
 
-    market: str = os.environ.get("NIMBUS_LIQ_MARKET", "SUIUSDT-PERP")
+    market: str = os.environ.get("NIMBUS_LIQ_MARKET", "BNBUSDT-PERP")
+    one_tier_market: str = os.environ.get("NIMBUS_LIQ1_MARKET", "LINKUSDT-PERP")
     open_notional_usd: float = _f("NIMBUS_LIQ_OPEN_NOTIONAL", 400_000)  # tier3; IM ~8k @50x
     leverage: int = _i("NIMBUS_LIQ_LEVERAGE", 50)  # <= tier3 max 50
     subject_deposit_usdt: str = os.environ.get("NIMBUS_LIQ_SUBJECT_USDT", "25000")

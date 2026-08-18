@@ -74,6 +74,7 @@ def _restore_marks(env_cfg, clients):
 
 
 @pytest.mark.serial
+@pytest.mark.xdist_group(name="liquidation_takeover")  # test_2 reads test_1's captured trades
 class TestPerpLiquidationTakeoverPriceIntegrity:
     @pytest.mark.timeout(900)  # two provisions + two opens + hold two marks until liquidated + ingest
     def test_1_full_cross_liquidation_records_takeover_trades_with_non_negative_price_and_total(self, env, clients, new_funded_account):

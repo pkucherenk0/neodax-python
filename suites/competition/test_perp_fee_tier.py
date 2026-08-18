@@ -37,6 +37,7 @@ def _flatten_after(enrolled_account, perp_maker):
 
 
 @pytest.mark.serial
+@pytest.mark.xdist_group(name="fee_tier_flow")  # 5 ordered steps share accumulated volume
 class TestCompetitionFeeTierStepDown:
     def test_1_schedule_offers_cheaper_overlay_tier_above_base_volume_threshold(self, env):
         # arrange: fetch live comp schedule.

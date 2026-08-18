@@ -35,7 +35,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Safe lane (stateless + smoke, default addopts)
-        run: pytest suites/nimbus/perp suites/nimbus/spot
+        run: pytest -n 4 suites/nimbus/perp suites/nimbus/spot
 
   e2e-ui:
     runs-on: ubuntu-latest
