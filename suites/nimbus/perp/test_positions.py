@@ -52,6 +52,7 @@ def _flatten_after(account, perp_maker):
 
 
 @pytest.mark.serial
+@pytest.mark.xdist_group(name="positions")  # test_2 closes the position test_1 opened
 class TestPerpPositionLifecycle:
     @pytest.mark.timeout(300)  # first use of account do faucet + transfer + enroll
     def test_1_market_order_fills_against_seeded_liquidity_and_opens_position(self, account, perp_maker):

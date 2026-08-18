@@ -13,6 +13,15 @@ name: perp-spot-tests
 # job, e2e-ui) — but ONLY on pushes to main (see that job's `if:`), since
 # pr-check.yml already runs it (blocking) for PR-branch pushes, and running both
 # concurrently races two live-order sessions against the same thin shared market.
+#
+# safe-lane/trades-lane/serial-lane are 3 SEPARATE jobs (own runner each), not 3
+# sequential steps in one job -- they run concurrently. Safe to do so: trades-lane
+# trades BTC/ETH (the default markets), serial-lane's mark-injecting tests use
+# SUI/DOGE/BNB/LINK exclusively (see CONVENTIONS.md's UAT market allocation) --
+# disjoint, so no cross-job collision. serial-lane is the long pole (~300s,
+# dominated by test_tiered_reduction.py's own step-hold timing, not xdist worker
+# count -- see CONVENTIONS.md known-gotchas); running the other two alongside it
+# instead of before it removes their time from the critical path.
 
 on:
   push:
@@ -24,9 +33,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  perp-spot:
+  safe-lane:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 15
     env:
       NIMBUS_UAT_BASE: ${{ secrets.NIMBUS_UAT_BASE }}
       NIMBUS_UAT_AUTH_BASE: ${{ secrets.NIMBUS_UAT_AUTH_BASE }}
@@ -47,19 +56,75 @@ jobs:
         # only needed for the e2e/ suite, run separately by the e2e-ui job below.
 
       - name: Safe lane (stateless + smoke, default addopts)
-        run: pytest suites/nimbus/perp suites/nimbus/spot
-
-      - name: Trades lane (places real orders on UAT)
-        run: pytest -m trades suites/nimbus/perp suites/nimbus/spot
-
-      - name: Serial lane (ordered flow, one process, no retries/cache)
-        run: pytest -m serial -p no:cacheprovider suites/nimbus/perp suites/nimbus/spot
+        run: pytest -n 4 suites/nimbus/perp suites/nimbus/spot
 
       - name: Upload run artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nimbus-results-${{ github.run_id }}
+          name: nimbus-results-safe-${{ github.run_id }}
+          path: results/latest
+          if-no-files-found: ignore
+          retention-days: 14
+
+  trades-lane:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NIMBUS_UAT_BASE: ${{ secrets.NIMBUS_UAT_BASE }}
+      NIMBUS_UAT_AUTH_BASE: ${{ secrets.NIMBUS_UAT_AUTH_BASE }}
+      NIMBUS_UAT_TRADING_BASE: ${{ secrets.NIMBUS_UAT_TRADING_BASE }}
+      NIMBUS_UAT_FAUCET_URL: ${{ secrets.NIMBUS_UAT_FAUCET_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Trades lane (places real orders on UAT)
+        run: pytest -n 4 -m trades suites/nimbus/perp suites/nimbus/spot
+
+      - name: Upload run artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nimbus-results-trades-${{ github.run_id }}
+          path: results/latest
+          if-no-files-found: ignore
+          retention-days: 14
+
+  serial-lane:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NIMBUS_UAT_BASE: ${{ secrets.NIMBUS_UAT_BASE }}
+      NIMBUS_UAT_AUTH_BASE: ${{ secrets.NIMBUS_UAT_AUTH_BASE }}
+      NIMBUS_UAT_TRADING_BASE: ${{ secrets.NIMBUS_UAT_TRADING_BASE }}
+      NIMBUS_UAT_FAUCET_URL: ${{ secrets.NIMBUS_UAT_FAUCET_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Serial lane (ordered/stateful flow, xdist_group-safe, no retries/cache)
+        run: pytest -n 4 --dist loadgroup -m serial -p no:cacheprovider suites/nimbus/perp suites/nimbus/spot
+
+      - name: Upload run artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nimbus-results-serial-${{ github.run_id }}
           path: results/latest
           if-no-files-found: ignore
           retention-days: 14

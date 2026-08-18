@@ -40,7 +40,8 @@ cd e2e && npm install && npx playwright install chromium && npx playwright test
 - `stateless` — independent, parallel-safe, no funding. **Start here**; these are the templates.
 - `smoke`     — connectivity/health, fail-fast.
 - `trades`    — places real orders; run deliberately.
-- `serial`    — ordered flows (fee-tier, lifecycle, liquidation); one process, module state.
+- `serial`    — ordered flows (fee-tier, lifecycle, liquidation); module state, xdist-safe via
+  `@pytest.mark.xdist_group` (`-n N --dist loadgroup`).
 
 UI e2e tests live in the separate `e2e/` Node project (see above), not as a pytest marker here.
 

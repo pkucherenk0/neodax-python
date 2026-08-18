@@ -75,6 +75,18 @@ export async function connectMetaMask(page: Page, context: BrowserContext): Prom
     }
   }
   await page.bringToFront();
+
+  // the popup closing is NOT sufficient evidence the connection actually landed -- confirmed
+  // live via a CI trace: the popup can close right after the connect-approval click (same race
+  // tolerated above) while the app's OWN session handshake never completes, leaving it stuck on
+  // its in-page "Approve Signature Request... Connecting" modal, then reverting to "Connect your
+  // account to continue" many seconds later. That silent failure only surfaced as a confusing,
+  // unrelated "Transfer button not found" timeout deep in the next step. Assert the app's own
+  // terminal signal instead: on a real success the original Connect button gets replaced (a
+  // "Successfully connected with MetaMask" modal briefly shows too, but it's transient -- the
+  // button swap is the stable one). Fail loud and immediately here if it didn't.
+  await expect(page.getByRole('button', { name: 'Connect' }).first())
+    .not.toBeVisible({ timeout: 20000 });
 }
 
 /** Run `action`, then approve however many MetaMask popups it triggers (Confirm/Sign/Connect,
