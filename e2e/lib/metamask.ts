@@ -35,13 +35,14 @@ export async function bootstrapMetaMask(mnemonic: string): Promise<{ wallet: Dap
   return { wallet, context };
 }
 
-/** Click Connect -> MetaMask -> approve the connect popup -> approve its follow-up
- * signature request IF one shows up (same popup, navigates in place -- see file header).
- * Whether the follow-up signature request happens is app/session-state dependent -- CI runs
- * observed the popup sometimes closing right after the connect approval with no second step,
- * where local dev runs always saw the two-step flow. Race both outcomes instead of assuming
- * the popup stays open. */
-export async function connectMetaMask(page: Page, context: BrowserContext): Promise<void> {
+/** One click-through of Connect -> MetaMask -> approve the connect popup -> approve its
+ * follow-up signature request IF one shows up (same popup, navigates in place -- see file
+ * header). Whether the follow-up signature request happens is app/session-state dependent --
+ * CI runs observed the popup sometimes closing right after the connect approval with no second
+ * step, where local dev runs always saw the two-step flow. Race both outcomes instead of
+ * assuming the popup stays open. Does NOT verify the app actually ended up connected -- see
+ * connectMetaMask(), which wraps this with that verification and a retry. */
+async function connectAttempt(page: Page, context: BrowserContext): Promise<void> {
   await page.getByRole('button', { name: 'Connect' }).first().click();
   await expect(page.getByText('MetaMask', { exact: true })).toBeVisible();
 
@@ -75,16 +76,42 @@ export async function connectMetaMask(page: Page, context: BrowserContext): Prom
     }
   }
   await page.bringToFront();
+}
 
-  // the popup closing is NOT sufficient evidence the connection actually landed -- confirmed
-  // live via a CI trace: the popup can close right after the connect-approval click (same race
-  // tolerated above) while the app's OWN session handshake never completes, leaving it stuck on
-  // its in-page "Approve Signature Request... Connecting" modal, then reverting to "Connect your
-  // account to continue" many seconds later. That silent failure only surfaced as a confusing,
-  // unrelated "Transfer button not found" timeout deep in the next step. Assert the app's own
-  // terminal signal instead: on a real success the original Connect button gets replaced (a
-  // "Successfully connected with MetaMask" modal briefly shows too, but it's transient -- the
-  // button swap is the stable one). Fail loud and immediately here if it didn't.
+/** did the app's own Connect button disappear (the real, terminal success signal -- see
+ * connectMetaMask()) within `timeoutMs`? */
+async function connectLanded(page: Page, timeoutMs: number): Promise<boolean> {
+  return page.getByRole('button', { name: 'Connect' }).first()
+    .waitFor({ state: 'hidden', timeout: timeoutMs })
+    .then(() => true)
+    .catch(() => false);
+}
+
+/** connectAttempt(), verified, with one bounded retry. The popup closing is NOT sufficient
+ * evidence the connection actually landed -- confirmed live via a CI trace: the popup can close
+ * right after the connect-approval click (the race connectAttempt() already tolerates) while
+ * the app's OWN session handshake never completes, leaving it stuck on its in-page "Approve
+ * Signature Request... Connecting" modal, then reverting to "Connect your account to continue"
+ * many seconds later. That silent failure only surfaced as a confusing, unrelated "Transfer
+ * button not found" timeout deep in the next step. Verify the app's own terminal signal instead
+ * of trusting the popup: on a real success the original Connect button gets replaced (a
+ * "Successfully connected with MetaMask" modal briefly shows too, but it's transient -- the
+ * button swap is the stable one).
+ *
+ * Confirmed live (CI trace + ARIA snapshot) that a failed attempt reverts the app to a fresh
+ * "Connect your account to continue" screen with a working Connect button, not a stuck/
+ * half-broken one -- safe to just run the whole attempt again. This is an auth/session
+ * handshake, not an order placement, so the "no retries" rail (real orders re-placed) doesn't
+ * apply here the way it does to the Python trades/serial suites. */
+export async function connectMetaMask(page: Page, context: BrowserContext): Promise<void> {
+  const maxAttempts = 2;
+  for (let attempt = 1; attempt < maxAttempts; attempt++) {
+    await connectAttempt(page, context);
+    if (await connectLanded(page, 20000)) return;
+  }
+  // final attempt: no retries left -- let this throw with Playwright's own rich diagnostics
+  // (locator, timeout, DOM snapshot) if it still didn't land.
+  await connectAttempt(page, context);
   await expect(page.getByRole('button', { name: 'Connect' }).first())
     .not.toBeVisible({ timeout: 20000 });
 }
