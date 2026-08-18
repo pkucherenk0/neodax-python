@@ -17,10 +17,11 @@ python tools/red_green.py <file> -k "name"   # prove a test can fail (CONVENTION
 ```
 
 ## UI e2e (separate Node project — not pytest)
-`e2e/` drives the real FE through a real MetaMask wallet (dappwright) — Python session
-injection can't get past the FE's wallet-connect gate (order buttons stay disabled, Open
-Orders/Positions panels stay locked, even with a valid JWT). See `e2e/lib/metamask.ts` for why
-and how; `e2e/lib/actions.ts` for the reusable, named UI actions.
+`e2e/` drives the real FE through a mock EIP-1193 wallet (`@johanneskares/wallet-mock`, real
+signatures, no browser extension) — plain JWT session injection can't get past the FE's
+wallet-connect gate (order buttons stay disabled, Open Orders/Positions panels stay locked, even
+with a valid JWT); it needs a wallet wagmi/AppKit actually recognizes as connected. See
+`e2e/lib/wallet.ts` for why and how; `e2e/lib/actions.ts` for the reusable, named UI actions.
 ```bash
 cd e2e && npm install && npx playwright install chromium && npx playwright test
 ```
@@ -96,8 +97,8 @@ UI e2e tests live in the separate `e2e/` Node project (see above), not as a pyte
 ## Status
 lib (15 modules), fixtures/ (split by concern), 18 suites (health, competition ×7, nimbus
 perp ×8, nimbus spot ×3), offline unit tests, red-green + api-coverage tools, and a real UI
-e2e suite (`e2e/`, separate Node project — real MetaMask via dappwright, not session
-injection). Live suites have been run against UAT from this repo (safe/trades/serial lanes
+e2e suite (`e2e/`, separate Node project — mock EIP-1193 wallet, not session injection or a
+real MetaMask extension). Live suites have been run against UAT from this repo (safe/trades/serial lanes
 all green). CI is wired: `.github/workflows/ci.yml` (full lane, push) and
 `.github/workflows/pr-check.yml` (fast safe-lane, required PR check). Mutation testing (mutmut)
 is not wired yet.
