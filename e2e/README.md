@@ -1,9 +1,10 @@
-# e2e — UI tests (Playwright + dappwright)
+# e2e — UI tests (Playwright + a mock wallet)
 
-Separate Node/Playwright project, not pytest. Real MetaMask wallet (dappwright) driving the
-actual FE — the wallet-connect gate (Reown AppKit + wagmi) can't be satisfied by session
-injection alone: order buttons stay `disabled`, Open Orders/Positions panels show "Connect
-Wallet to Start" without a real wallet connection.
+Separate Node/Playwright project, not pytest. Mock EIP-1193 wallet
+(`@johanneskares/wallet-mock`, real signatures, no real MetaMask extension) driving the actual
+FE — the wallet-connect gate (Reown AppKit + wagmi) can't be satisfied by session injection
+alone: order buttons stay `disabled`, Open Orders/Positions panels show "Connect Wallet to
+Start" without a genuinely connected wallet.
 
 ```bash
 cd e2e && npm install && npx playwright install chromium && npx playwright test
@@ -14,18 +15,22 @@ manual named checkpoints in `screenshots/` along the way (see `lib/actions.ts`).
 
 ## Known issues / workarounds (debugging notes, not rules)
 
-**MetaMask popup navigates in place, doesn't always reopen.** dappwright's own
-`wallet.approve()`/`sign()` assume every popup step opens a NEW page and closes when done.
-This app's connect popup instead navigates in place from "Connect" to its own SIWE-style
-signature request — whether that second step even appears is session-state dependent (CI has
-seen both). `connectMetaMask()` in `lib/metamask.ts` races both outcomes instead of assuming
-the popup stays open.
+**Real MetaMask (dappwright) was replaced with a mock wallet — history, not current design.**
+Every real dappwright failure this project hit (popup navigating in place instead of reopening,
+a popup self-closing mid-click, a connect that silently never landed, a retry that hung ~10min)
+traced back to the same thing: Playwright driving a real browser extension's popup is
+inherently racy against its own internal timing. Confirmed that's an industry-wide, still-
+unresolved pattern (`microsoft/playwright-python#1316`, `synpress-io/synpress#1308` — MetaMask
+v13 specifically), not something fixable in this repo's test code. `lib/wallet.ts` now installs
+an injected EIP-1193 provider instead — no popup exists to race against.
 
-**MetaMask popup can self-close mid-click (timing race).** Confirmed via a CI trace/screenshot:
-the popup can be a perfectly well-formed "Approve Signature Request" (correct network/domain/
-challenge, Confirm button visible+enabled) and still close on its own in the gap between an
-`isClosed()` check and the click landing — not a broken import or bad seed phrase. Treated as
-the same valid "closed on its own" outcome the surrounding code already tolerates for step 1.
+**The app auto-connects on its own once a wallet is discoverable — no Connect-button click
+needed.** Confirmed live: as soon as the mock wallet is installed and the page loads, the app
+completes the connect handshake by itself. `waitForWalletConnected()` in `lib/actions.ts` waits
+for the connected-state signal instead of clicking anything. Two signals are accepted, not just
+one — the top-nav "Deposit" link, or the "Welcome to Yellow Pro" modal's own "Connected as
+0x..." text, whichever renders first (confirmed live: the modal can appear and cover the
+Deposit link before it would otherwise become visible).
 
 **"What's new" / "Welcome" modals render with a delay.** Both appear a beat after page load or
 after certain clicks (confirmed: not present immediately, ~3s later), so a one-shot "check then
