@@ -49,19 +49,13 @@ class TestSpotOrders:
         assert ref > 0, "spot reference price available"
         amount = "1.0000"
         price = f"{ref * 0.9:.2f}"
-        # ground truth for the locked amount: a LIMIT buy reserves exactly amount x price of
-        # quote, no buffer/fee (the slippage buffer only applies to MARKET orders). confirmed
-        # against BE source: portfolio_manager/spot/spot_service.go LockOrderFunds/
-        # PrepareLockOrderFunds (~L1800-1829), effectivePrice=price for limit orders; see also
-        # TestSpotService_LockOrderFunds_PostOnly_BuyLocksQuoteAtPrice in spot_service_test.go.
+        # ground truth: limit buy locks amount x price of quote exactly, no buffer/fee
+        # (slippage buffer is market-only). src: spot_service.go LockOrderFunds/
+        # PrepareLockOrderFunds ~L1800-1829, TestSpotService_LockOrderFunds_PostOnly_BuyLocksQuoteAtPrice.
         reserved_notional = float(amount) * float(price)
-        # the shared `account` fixture faucets spot with `funding.spot_usdt`, then transfers
-        # `funding.perp_usdt` of it into perps -- it confirms the PERP side settled (>=90%
-        # threshold) but never re-confirms spot afterward. reading spot "before" immediately
-        # can catch that debit still trickling in (this is the actual cause of a recurring
-        # flake here). settle it against the fixture's own known funded baseline first --
-        # that's the real independent oracle (the config amounts used to fund the account),
-        # not a guessed value.
+        # `account` fixture confirms PERP settled (>=90%) but never re-confirms spot after the
+        # transfer -- reading spot "before" immediately can catch that debit still trickling in
+        # (real recurring flake). settle against the fixture's known funded baseline first.
         expected_baseline = float(funding.spot_usdt) - float(funding.perp_usdt)
         before = poll_until(
             lambda: get_spot_balance_snapshot(account.trading_client, account.app_session_id, "USDT"),
@@ -119,13 +113,9 @@ class TestSpotOrders:
             lambda: any(o.order_id == order_uuid for o in get_spot_open_orders(account.trading_client, account.app_session_id, spot_market)),
             lambda seen: not seen, timeout_s=15, message="cancelled order left open_orders",
         )
-        # release target is `before` -- justified now that the lock itself was proven exact
-        # (reserved_notional == before - during above), so full release must land back on
-        # exactly `before`. generous timeout: this is the step that occasionally lags for
-        # real (not a design flaw, just genuine eventual-consistency). Capture the value
-        # poll_until itself confirmed -- a SEPARATE fresh read right after can hit a
-        # different backend replica/cache and observe a different number even though the
-        # poll already succeeded against a consistent one.
+        # release target `before` valid since lock was proven exact above. real eventual-
+        # consistency lag, not a bug -- generous timeout. capture the value poll_until itself
+        # confirmed, not a fresh re-read (can hit a different replica/cache and disagree).
         after_available = poll_until(
             lambda: get_spot_balance_snapshot(account.trading_client, account.app_session_id, "USDT").available,
             lambda avail: abs(avail - before.available) < 1e-6, timeout_s=30,
