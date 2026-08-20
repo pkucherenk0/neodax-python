@@ -1,6 +1,33 @@
 # nimbus-python
 
-Two-layer test harness for Nimbus:
+[![pr-check](https://github.com/pkucherenk0/neodax-python/actions/workflows/pr-check.yml/badge.svg)](https://github.com/pkucherenk0/neodax-python/actions/workflows/pr-check.yml)
+[![perp-spot-tests](https://github.com/pkucherenk0/neodax-python/actions/workflows/ci.yml/badge.svg)](https://github.com/pkucherenk0/neodax-python/actions/workflows/ci.yml)
+
+A test-automation portfolio project: three layers of testing against a live (throwaway-UAT)
+crypto perpetuals/spot trading platform (anonymized for public sharing — real name/domain
+scrubbed).
+
+**Highlights, for a fast skim:**
+- **Contract-first API testing** — every response validated against a pydantic schema
+  (`lib/schemas.py`), not just status codes; domain math (fees, tiers, liquidation pricing)
+  lives in framework-agnostic `lib/` and is unit-tested offline (`tests/unit/`).
+- **Safety-railed live-money testing** — trading tests place real orders against a live
+  environment with hard rails: no retries ever on order placement (a retry doubles volume),
+  trading lanes opt-in only, ordered/stateful flows isolated via `xdist_group`. See
+  `CONVENTIONS.md`.
+- **Anti-false-positive discipline** — `tools/red_green.py` proves a test can actually go red
+  before trusting it green; `tools/api_coverage.py` diffs the BE endpoint registry against test
+  coverage. See `CONVENTIONS.md` §13.
+- **Real UI e2e** (`e2e/`) — a separate Playwright/Node project driving the actual frontend
+  through a mock EIP-1193 wallet (real signatures, no browser extension needed).
+- **k6 performance suite** (`perf/`) — a manual-only (never-in-CI) load/stress suite, tiered by
+  blast radius (public reads → authed reads → real-but-never-filling orders → real matched
+  fills), with automatic post-run analysis and a documented client+server metrics/monitoring
+  guide. See `perf/README.md`.
+- **CI-integrated** — `pr-check.yml` (required PR gate) and `ci.yml` (full lane on every push),
+  parallelized via `pytest-xdist`.
+
+Three layers of the harness itself:
 - **API integration** (`suites/`, `tests/unit/`) — **pytest + Playwright in API mode** (no
   browser), with response-shape validation via [pydantic](https://docs.pydantic.dev). Domain
   logic lives in `lib/`; specs are thin **Arrange → Act → Assert** wrappers.
@@ -105,8 +132,8 @@ e2e/          SEPARATE Node/Playwright project — UI e2e via a mock EIP-1193 wa
               or AGENTS.md.
 
 perf/         SEPARATE k6 project — performance/load testing, manual only, NEVER wired into
-              CI. Three safety tiers (market-data / account-reads / order-placement). See
-              perf/README.md.
+              CI. Four safety tiers by blast radius (market-data / account-reads /
+              order-placement / order-matching). See perf/README.md.
 ```
 
 ## Contributing
