@@ -95,8 +95,9 @@ UI e2e tests live in the separate `e2e/` Node project (see above), not as a pyte
   Agents/CI: `results/latest/detailed/<test>.json`.
 
 ## Status
-lib (15 modules), fixtures/ (split by concern), 18 suites (health, competition ×7, nimbus
-perp ×8, nimbus spot ×3), offline unit tests, red-green + api-coverage tools, and a real UI
+lib (15 modules), fixtures/ (split by concern), 20 suites (health ×2 -- env reachability +
+faucet canary, competition ×7, nimbus perp ×8, nimbus spot ×3), offline unit tests, red-green
++ api-coverage tools, and a real UI
 e2e suite (`e2e/`, separate Node project — mock EIP-1193 wallet, not session injection or a
 real MetaMask extension). Live suites have been run against UAT from this repo (safe/trades/serial lanes
 all green). CI is wired: `.github/workflows/ci.yml` (full lane, push) and

@@ -1,7 +1,10 @@
 name: pr-check
 
 # PR-blocking gate. Two required checks:
-#  - safe-lane: fast (stateless + smoke), no live orders, no faucet spend.
+#  - safe-lane: fast (stateless + smoke), no live orders. One exception: test_faucet_health.py
+#    does a single tiny throwaway-UAT faucet deposit as a canary -- deliberate, so a faucet/
+#    settlement outage (confirmed to happen; see its own docstring) fails fast here instead of
+#    surfacing as confusing timeouts scattered across every @trades/@serial test downstream.
 #  - e2e-ui: real browser automation (mock EIP-1193 wallet, no real MetaMask extension) against
 #    the deployed UAT FE, places real live orders on UAT. Deliberately blocking too (explicit
 #    choice, heavier than safe-lane) -- see e2e/README / AGENTS.md for what the suite does.
@@ -35,7 +38,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Safe lane (stateless + smoke, default addopts)
-        run: pytest -n 4 suites/nimbus/perp suites/nimbus/spot
+        run: pytest -n 4 suites/nimbus/perp suites/nimbus/spot suites/test_health.py suites/test_faucet_health.py
 
   e2e-ui:
     runs-on: ubuntu-latest
