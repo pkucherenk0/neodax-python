@@ -89,6 +89,13 @@ class TestPerpPositionLifecycle:
         long_after = long_size(positions)
         long_row = next((p for p in positions if p.direction == "long"), None)
         record("open position", long_row.model_dump() if long_row else {"note": "no discrete long row", "longAfter": long_after})
+        # margin ledger settles async, separately from position size (confirmed: this flaked
+        # intermittently on either assertion in test_1/test_2 until this poll was added) -- wait
+        # for it instead of reading it once right after the position-size poll above.
+        poll_until(
+            lambda: get_perp_balance_snapshot(account.trading_client, account.app_session_id).available,
+            lambda avail: avail < before.available, timeout_s=10, message="available dropped (margin locked)",
+        )
         after = get_perp_balance_snapshot(account.trading_client, account.app_session_id)
         record("balance around open", {"before": before.available, "after": after.available,
                                        "allocated": after.allocated, "longBefore": long_before, "longAfter": long_after})
@@ -142,6 +149,12 @@ class TestPerpPositionLifecycle:
             lambda size: size < long_before - amt * 0.5, timeout_s=20, message="long exposure dropped",
         )
         long_after = long_size(get_perp_positions(account.trading_client, account.app_session_id, mkt.market))
+        # margin ledger settles async, separately from position size -- see the matching poll
+        # in test_1. same race, mirrored: wait for release instead of one unguarded read.
+        poll_until(
+            lambda: get_perp_balance_snapshot(account.trading_client, account.app_session_id).available,
+            lambda avail: avail > before.available, timeout_s=10, message="available rose (margin released)",
+        )
         after = get_perp_balance_snapshot(account.trading_client, account.app_session_id)
         record("balance around close", {"before": before.available, "after": after.available,
                                         "longBefore": long_before, "longAfter": long_after})
