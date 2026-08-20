@@ -24,6 +24,13 @@ unresolved pattern (`microsoft/playwright-python#1316`, `synpress-io/synpress#13
 v13 specifically), not something fixable in this repo's test code. `lib/wallet.ts` now installs
 an injected EIP-1193 provider instead — no popup exists to race against.
 
+**`wallet-mock` doesn't implement `eth_signTypedData_v4`.** Its `personal_sign` covers the
+SIWE-style connect signature (confirmed live: that popup was always a plain "Approve Signature
+Request", not a typed-data screen) and hasn't been an issue in any run so far — order placement
+goes through cleanly, so the state-channel signing step is `personal_sign` too. If a future flow
+needs typed-data signing, extend the wallet object via wallet-mock's `{ wallet }` install option
+rather than assume it's covered.
+
 **The app auto-connects on its own once a wallet is discoverable — no Connect-button click
 needed.** Confirmed live: as soon as the mock wallet is installed and the page loads, the app
 completes the connect handshake by itself. `waitForWalletConnected()` in `lib/actions.ts` waits

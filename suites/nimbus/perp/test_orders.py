@@ -112,9 +112,8 @@ class TestPerpOrders:
             lambda: any(o.order_id == order_uuid for o in get_perp_open_orders(account.trading_client, account.app_session_id, mkt.market)),
             lambda seen: not seen, timeout_s=15, message="cancelled order left open_orders",
         )
-        # release target `before` valid since lock was proven exact above. real eventual-
-        # consistency lag, not a bug -- generous timeout. capture the value poll_until itself
-        # confirmed, not a fresh re-read (can hit a different replica/cache and disagree).
+        # release target `before` valid since lock was proven exact above; real eventual-consistency
+        # lag (generous timeout). capture poll_until's own value, not a fresh re-read (different replica risk).
         after_available = poll_until(
             lambda: get_perp_balance_snapshot(account.trading_client, account.app_session_id).available,
             lambda avail: abs(avail - before.available) < 1e-6, timeout_s=30,

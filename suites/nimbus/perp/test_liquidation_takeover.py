@@ -142,9 +142,8 @@ class TestPerpLiquidationTakeoverPriceIntegrity:
         record("subject opened cross legs", {"longA": long_a, "entryA": entry_a, "longNotional": long_a * entry_a,
                                              "shortB": short_b, "entryB": entry_b, "shortNotional": short_b * entry_b})
 
-        # act — crash market A toward 0 (shared equity deeply negative -> batch settles leg B
-        # <=0 -> clamp), hold market B just ABOVE its entry (small LOSS -> short B is NOT IOC'd
-        # as profitable in Step2).
+        # act — crash market A (equity deeply negative -> batch clamps leg B), hold market B just
+        # above entry (small loss, not IOC'd as profitable in Step2).
         crash_mark = round_tick(entry_a * cfg.crash_to_pct, long_mkt.tick_size, long_mkt.price_precision)
         flat_mark = round_tick(entry_b * (1 + cfg.short_flat_above_pct), short_mkt.tick_size, short_mkt.price_precision)
         # ttl 60s < liquidate_timeout_s (120s default). size_of callback refreshes token each poll.

@@ -248,9 +248,8 @@ class PerpOrderResponse(_Loose):
     order_uuid: str
 
 
-# GET /perpetual/trades — perp fills key on `order_uuid` (spot uses `order_id`). fee =
-# quote-denominated (USDT). exec_type in trade | liquidation | liquidation_takeover | adl.
-# total = amount x price (signed). PERP-3325: a liquidation_takeover MUST persist price > 0.
+# GET /perpetual/trades: keyed on order_uuid (spot uses order_id). fee in USDT, total=amount*price.
+# exec_type: trade|liquidation|liquidation_takeover|adl. PERP-3325: takeover price must be >= 0.
 class PerpTradeRow(_Loose):
     order_uuid: str
     market: str
@@ -342,9 +341,8 @@ class PerpCancelResponse(_Loose):
     message: str | None = None
 
 
-# GET /perpetual/market-risk-tiers — per-market leverage-based tiered-margin ladder (PERP-2544).
-# public (no auth). rate/leverage/qty fields STRINGS. `max_position_qty` = tier UPPER
-# quote-notional cap (name historical — it is quote, not contracts).
+# GET /perpetual/market-risk-tiers (public, PERP-2544): tiered margin ladder, string fields.
+# max_position_qty = tier upper quote-notional cap despite the name (historical, not contracts).
 class PerpRiskTierRow(_Loose):
     symbol: str
     tier_index: int
@@ -360,9 +358,8 @@ class PerpRiskTiersResponse(_Loose):
     tiers: list[PerpRiskTierRow]
 
 
-# GET /perpetual/position-history — closed-position lifecycle records (PERP-2548). financial
-# fields = strings. empty ones dropped by proto omitempty -> optional.
-# close_reason in normal | liquidated | adl.
+# GET /perpetual/position-history (PERP-2548): closed-position records, string fields, empty
+# ones optional (proto omitempty). close_reason: normal|liquidated|adl.
 class PerpPositionHistoryItem(_Loose):
     id: str
     market: str
