@@ -127,6 +127,10 @@ class TestPerpTieredPositionReduction:
 
         # act 3 — drop the mark in small steps; each step peels one tier. (holds/re-injects internally.)
         # ttl 60s, max_steps x step_hold_s can run minutes. size_of refreshes token each poll.
+        # stop after 2 reductions (proves genuinely PIECE-by-piece, plural, matching this test's
+        # own name) instead of walking all max_steps: confirmed live this was burning a dozen+
+        # extra full step_hold_s waits after already having enough proof (min_pieces=1) -- same
+        # early-stop pattern test_2 below already uses via its own max_pieces=1.
         size_of = auto_refreshing(
             env.cfg, clients, subject,
             lambda: long_size(get_perp_positions(subject.trading_client, subject.app_session_id, mkt.market)),
@@ -135,7 +139,7 @@ class TestPerpTieredPositionReduction:
             faucet=faucet, market=mkt.market, entry=entry,
             round_tick=lambda x: round_tick(x, mkt.tick_size, mkt.price_precision),
             step_drop_pct=cfg.step_drop_pct, max_steps=cfg.max_steps, step_hold_s=cfg.step_hold_s,
-            size_of=size_of,
+            max_pieces=2, size_of=size_of,
         ))
         restore_mark_price(faucet, mkt.market, str(mark))  # restore ASAP (blast radius)
 
