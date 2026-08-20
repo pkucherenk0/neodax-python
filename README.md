@@ -8,6 +8,8 @@ Two-layer test harness for Nimbus:
   EIP-1193 wallet (`@johanneskares/wallet-mock`, real signatures, no browser extension). Lives
   outside the Python suite because it needs a real browser. See `e2e/README` / `AGENTS.md` for
   why and how.
+- **Performance** (`perf/`) — a separate k6 project, run manually on demand only — **never
+  wired into CI**. See `perf/README.md`.
 
 > ⚠️ **These tests hit live environments and can spend real balance.** Read the safety rails
 > below and in [`AGENTS.md`](./AGENTS.md) before running anything that trades.
@@ -95,11 +97,16 @@ suites/       competition/ + nimbus/ ; TEMPLATE_template.py to copy
 tests/unit/   offline unit tests for pure lib math (run first)
 tools/        red_green.py (anti-false-positive) + api_coverage.py (endpoint registry × tests)
               + arrange_metamask_e2e.py (funds accounts for e2e/, see below)
+              + arrange_perf_accounts.py (funds accounts for perf/, see below)
 
 e2e/          SEPARATE Node/Playwright project — UI e2e via a mock EIP-1193 wallet, no real
               MetaMask extension. lib/wallet.ts (mock wallet install), lib/actions.ts (named
               page actions), tests/. Not pytest — `cd e2e && npx playwright test`. See e2e/README
               or AGENTS.md.
+
+perf/         SEPARATE k6 project — performance/load testing, manual only, NEVER wired into
+              CI. Three safety tiers (market-data / account-reads / order-placement). See
+              perf/README.md.
 ```
 
 ## Contributing
