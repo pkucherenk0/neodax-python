@@ -89,28 +89,34 @@ class TestPerpPositionLifecycle:
         long_after = long_size(positions)
         long_row = next((p for p in positions if p.direction == "long"), None)
         record("open position", long_row.model_dump() if long_row else {"note": "no discrete long row", "longAfter": long_after})
-        # margin ledger settles async, separately from position size (confirmed: this flaked
-        # intermittently on either assertion in test_1/test_2 until this poll was added) -- wait
-        # for it instead of reading it once right after the position-size poll above.
+        # margin ledger settles async, separately from position size -- wait for it instead of
+        # reading it once right after the position-size poll above. gate on ALLOCATED, not
+        # available: available also reflects any instant PnL from crossing the spread at fill,
+        # which is a real (if usually small) confound on a live market -- allocated margin
+        # rising is the actual invariant "the order locked margin" means.
         poll_until(
-            lambda: get_perp_balance_snapshot(account.trading_client, account.app_session_id).available,
-            lambda avail: avail < before.available, timeout_s=10, message="available dropped (margin locked)",
+            lambda: get_perp_balance_snapshot(account.trading_client, account.app_session_id).allocated,
+            lambda alloc: alloc > before.allocated, timeout_s=10, message="allocated margin locked",
         )
         after = get_perp_balance_snapshot(account.trading_client, account.app_session_id)
         record("balance around open", {"before": before.available, "after": after.available,
-                                       "allocated": after.allocated, "longBefore": long_before, "longAfter": long_after})
+                                       "allocatedBefore": before.allocated, "allocatedAfter": after.allocated,
+                                       "longBefore": long_before, "longAfter": long_after})
 
         record_check(name="long exposure increased by the ordered size",
                      passed=abs(long_after - long_before - amt) < amt * 0.001,
                      detail={"longBefore": long_before, "longAfter": long_after, "orderAmount": amt})
-        record_check(name="available collateral dropped by locked margin",
-                     passed=after.available < before.available,
-                     detail={"before": before.available, "after": after.available, "allocated": after.allocated})
+        record_check(name="margin locked (allocated rose)",
+                     passed=after.allocated > before.allocated,
+                     detail={"before": before.allocated, "after": after.allocated})
+        # informational only, not a gate -- available also reflects instant fill PnL.
+        record_check(name="available after open (informational, PnL-dependent)", passed=True, info=True,
+                     detail={"before": before.available, "after": after.available})
 
         assert fill.fills > 0, "taker fill executed"
         assert fill.amount == pytest.approx(amt, abs=1e-6), "our order filled at the ordered size"
         assert long_after - long_before == pytest.approx(amt, abs=1e-6), "long exposure grew by the order amount"
-        assert after.available < before.available, "available dropped by locked margin"
+        assert after.allocated > before.allocated, "allocated margin locked by the open"
 
     @pytest.mark.timeout(180)
     def test_2_closing_the_position_flattens_it_and_releases_margin(self, account, perp_maker):
@@ -149,21 +155,32 @@ class TestPerpPositionLifecycle:
             lambda size: size < long_before - amt * 0.5, timeout_s=20, message="long exposure dropped",
         )
         long_after = long_size(get_perp_positions(account.trading_client, account.app_session_id, mkt.market))
-        # margin ledger settles async, separately from position size -- see the matching poll
-        # in test_1. same race, mirrored: wait for release instead of one unguarded read.
+        # margin ledger settles async, separately from position size -- poll it instead of one
+        # unguarded read (see the matching poll in test_1). gate on ALLOCATED, not available:
+        # `available` bundles margin release together with whatever realized PnL the close
+        # produced, and this market can move a real amount between open and close on a live
+        # env (confirmed: BTCUSDT-PERP moved ~10% within one run, same market trades-lane
+        # trades concurrently -- see git history). allocated margin releasing is the actual
+        # invariant this test proves; available rising is not guaranteed on a real fill.
         poll_until(
-            lambda: get_perp_balance_snapshot(account.trading_client, account.app_session_id).available,
-            lambda avail: avail > before.available, timeout_s=10, message="available rose (margin released)",
+            lambda: get_perp_balance_snapshot(account.trading_client, account.app_session_id).allocated,
+            lambda alloc: alloc < before.allocated, timeout_s=10, message="allocated margin released",
         )
         after = get_perp_balance_snapshot(account.trading_client, account.app_session_id)
         record("balance around close", {"before": before.available, "after": after.available,
+                                        "allocatedBefore": before.allocated, "allocatedAfter": after.allocated,
                                         "longBefore": long_before, "longAfter": long_after})
 
         record_check(name="our long exposure closed (reduced by the order amount)",
                      passed=abs(long_before - long_after - amt) < amt * 0.001,
                      detail={"longBefore": long_before, "longAfter": long_after, "orderAmount": amt})
-        record_check(name="margin released (available rose back)", passed=after.available > before.available,
+        record_check(name="margin released (allocated dropped)",
+                     passed=after.allocated < before.allocated,
+                     detail={"before": before.allocated, "after": after.allocated})
+        # informational only, not a gate -- available also reflects realized PnL from the
+        # close, which can legitimately go either way on a live market.
+        record_check(name="available after close (informational, PnL-dependent)", passed=True, info=True,
                      detail={"before": before.available, "after": after.available})
 
         assert long_before - long_after == pytest.approx(amt, abs=1e-6), "long exposure reduced by the order amount"
-        assert after.available > before.available, "available rose after releasing margin"
+        assert after.allocated < before.allocated, "allocated margin released after closing"
