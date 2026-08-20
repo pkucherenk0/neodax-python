@@ -40,10 +40,8 @@ def bps_to_rate(bps: str) -> float:
     return float(bps) / 10_000
 
 
-# charged-fee rate matching. API return fee at HIGH precision, so fill.charged_rate = fee/notional
-# equal tier rate EXACTLY (verified live). only tolerance needed = IEEE-754 float-noise.
-# match to 6 decimals = +-0.005 bps window, ~2000x tighter than smallest tier gap (0.1 bps),
-# so wrong-tier charge always caught. NOT wide relative band — that dilute point of fee check.
+# charged rate == tier rate exactly (verified live, float-noise only). 6-decimal tolerance is
+# ~2000x tighter than the smallest tier gap (0.1bps), so a wrong-tier charge is always caught.
 RATE_MATCH_DECIMALS = 6
 RATE_TOLERANCE = 0.5 * 10**-RATE_MATCH_DECIMALS
 

@@ -54,9 +54,8 @@ class TestCompetitionNimTier:
         # act: faucet ~24x target NIM requirement so 24h average crosses it, then wait
         # campaign_nim_balance to ingest up to requirement.
         deposit = math.ceil(target.nim_min * nim_flow.deposit_multiplier)
-        # faucet client retries 5xx (client_for default) ON PURPOSE: UAT faucet 503s transient,
-        # NIM credit additive. duplicate deposit harmless (2x deposit still keeps 24h average
-        # below next tier requirement). reliability on transient 503 > idempotency here.
+        # retries 5xx on purpose: UAT faucet 503s transient, NIM credit additive so a duplicate
+        # deposit is harmless (2x still keeps the 24h average below the next tier).
         faucet = env.client_for(None, env.faucet_url)
         faucet_deposit(faucet, wallet.app_session_id, str(deposit), nim_flow.asset)
         poll_until(

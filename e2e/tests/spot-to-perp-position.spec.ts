@@ -1,18 +1,5 @@
-/**
- * Visual e2e: spot -> perp transfer, perp limit order via the real UI, matched by a
- * counterparty order placed via a raw API call, position visually confirmed.
- *
- * User 1 (this test, real UI via a mock EIP-1193 wallet) rests a limit order; User 2 (separate
- * funded account, API-only) crosses it; we confirm the resulting position renders in User 1's
- * UI. Needs a genuinely connected wallet -- a plain JWT-in-localStorage session can't get past
- * this app's wallet-connect gate (Reown AppKit/wagmi): Open Long/Short stays disabled and Open
- * Orders/Positions shows "Connect Wallet to Start" even with a valid, working JWT. See
- * ../lib/wallet.ts for how the connection is established (no real MetaMask, no popups) and
- * ../lib/actions.ts for what each step below actually does.
- *
- * Arrangement (funded accounts) comes from ../.arrangement.json, generated fresh each run by
- * global-setup.ts.
- */
+/** Visual e2e: spot -> perp transfer, perp limit order via the real UI, matched by a raw-API
+ * counterparty order, position visually confirmed. See ../lib/wallet.ts and ../lib/actions.ts. */
 import { test as base } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';

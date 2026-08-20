@@ -19,9 +19,7 @@ class EnvConfig:
     has_faucet: bool
 
 
-# wallet that authenticated and (where applicable) been funded.
-# app_session_id = wallet address used as app_session_id in trading/faucet calls.
-# jwt = auth service access_token.
+# authenticated (+funded, where applicable) wallet. app_session_id = wallet address. jwt = access_token.
 @dataclass(frozen=True)
 class FundedAccount:
     address: str

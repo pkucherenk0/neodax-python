@@ -156,9 +156,8 @@ class TestPerpPositionHistoryLifecycle:
         record("history envelope", {"count": len(body.positions), "total": body.total, "page": body.page,
                                     "page_size": body.page_size, "has_more": body.has_more})
 
-        # assert — envelope echoes the requested page_size (real behavioral check; isinstance
-        # list would be vacuous — lib normalizes null->[] always, §13) and every returned row
-        # is for the requested market.
+        # assert — page_size echo is a real check (isinstance list alone is vacuous, §13 -- lib
+        # always normalizes null->[]); every row must match the requested market too.
         all_for_market = all(p.market.upper() == m.market.upper() for p in body.positions)
         record_check(name="envelope echoes requested page_size (50)", passed=body.page_size == 50,
                      detail={"page_size": body.page_size})

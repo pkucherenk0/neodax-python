@@ -87,9 +87,8 @@ class TestCompetitionFeeTierStepDown:
             order_notional_usd=fee_tier_flow.drive_order_notional_usd,
             target_volume_usd=target_volume_usd, max_cycles=fee_tier_flow.max_cycles,
         )
-        # surface driver outcome (never silently drop skipped legs). meaningful outcome
-        # (campaign volume crossed threshold) asserted by poll below — do NOT assert
-        # traded>0, which fails spurious if account already crossed (target -> 0 cycles).
+        # surface driver outcome, never silently drop skipped legs. don't assert traded>0 --
+        # spurious fail if account already crossed threshold (target -> 0 cycles needed).
         annotate(f"volume-driver: cycles={driven.cycles} skipped={driven.skipped} "
                  f"traded=${round(driven.traded_volume_usd)} target=${round(target_volume_usd)}")
         assert driven.skipped <= driven.cycles, "thin-book skips stayed at/below cycle count (fills dominated)"
@@ -174,9 +173,8 @@ class TestCompetitionFeeTierStepDown:
 
     @pytest.mark.timeout(120)
     def test_5_subject_maker_fill_charged_discounted_overlay_maker_rate(self, enrolled_account, perp_maker):
-        # arrange: roles flip. enrolled subject RESTS sell as best ask (maker/short),
-        # non-enrolled perp_maker lifts it. retry on moving book so subject reliably gets
-        # a MAKER fill. proves overlay discounts subject MAKER side too.
+        # roles flip: enrolled subject rests sell (maker/short), perp_maker lifts it -- retry on
+        # moving book for a reliable maker fill. proves overlay discounts the maker side too.
         mkt = resolve_perp_market(enrolled_account.trading_client, perp_market)
 
         # act: capture one clean maker fill for enrolled subject.

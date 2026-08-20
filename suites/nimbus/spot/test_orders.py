@@ -41,9 +41,8 @@ def _cancel_leftovers(account):
 @pytest.mark.timeout(300)  # first `account` use -> faucet + transfer + enroll
 class TestSpotOrders:
     def test_resting_spot_limit_order_appears_in_open_orders_and_can_be_cancelled(self, account):
-        # arrange — price 10% below market (rests as bid, never fills). spot book can be
-        # completely empty on a quiet UAT market (no resting orders from anyone yet) -> fall
-        # back to the corresponding perp market's oracle-fed mark price.
+        # arrange — price 10% below market (rests as bid, never fills). spot book can be empty
+        # on a quiet UAT market -> fall back to the perp market's oracle-fed mark price.
         mark = get_perp_mark_price(account.trading_client, f"{spot_market}-PERP")
         ref = spot_reference_price_or_mark(get_spot_top_of_book(account.trading_client, spot_market), mark)
         assert ref > 0, "spot reference price available"
@@ -113,9 +112,8 @@ class TestSpotOrders:
             lambda: any(o.order_id == order_uuid for o in get_spot_open_orders(account.trading_client, account.app_session_id, spot_market)),
             lambda seen: not seen, timeout_s=15, message="cancelled order left open_orders",
         )
-        # release target `before` valid since lock was proven exact above. real eventual-
-        # consistency lag, not a bug -- generous timeout. capture the value poll_until itself
-        # confirmed, not a fresh re-read (can hit a different replica/cache and disagree).
+        # release target `before` valid since lock was proven exact above; real eventual-consistency
+        # lag (generous timeout). capture poll_until's own value, not a fresh re-read (different replica risk).
         after_available = poll_until(
             lambda: get_spot_balance_snapshot(account.trading_client, account.app_session_id, "USDT").available,
             lambda avail: abs(avail - before.available) < 1e-6, timeout_s=30,
