@@ -56,7 +56,7 @@ jobs:
         # only needed for the e2e/ suite, run separately by the e2e-ui job below.
 
       - name: Safe lane (stateless + smoke, default addopts)
-        run: pytest -n 4 suites/nimbus/perp suites/nimbus/spot
+        run: pytest -n 4 suites/nimbus/perp suites/nimbus/spot suites/test_health.py suites/test_faucet_health.py
 
       - name: Upload run artifacts
         if: always()
