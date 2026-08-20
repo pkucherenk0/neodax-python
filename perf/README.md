@@ -78,27 +78,31 @@ JSON, no signing needed.
 
 ## Running
 
+**Always run through `perf/run.sh`, not bare `k6 run`** — it's the canonical entrypoint and the
+only thing that gives you the automatic post-run analysis below.
+
 ```bash
 # Tier 1 — no provisioning needed
-k6 run perf/scripts/market-data/smoke.js
-k6 run perf/scripts/market-data/load.js
-k6 run perf/scripts/market-data/stress.js
+perf/run.sh perf/scripts/market-data/smoke.js
+perf/run.sh perf/scripts/market-data/load.js
+perf/run.sh perf/scripts/market-data/stress.js
 
 # Tier 2 — provision first (fresh every time, 60s TTL)
 python3 tools/arrange_perf_accounts.py --count 10
-k6 run perf/scripts/account-reads/smoke.js
-k6 run perf/scripts/account-reads/load.js
+perf/run.sh perf/scripts/account-reads/smoke.js
+perf/run.sh perf/scripts/account-reads/load.js
 
 # Tier 3 — provision first, smoke only
 python3 tools/arrange_perf_accounts.py --count 2
-k6 run perf/scripts/order-placement/smoke.js
+perf/run.sh perf/scripts/order-placement/smoke.js
 ```
 
-Override the target market with `PERF_MARKET` (Tier 1 defaults to `BTCUSDT-PERP`; Tier 2/3 use
-whatever `--market` the arrange script wrote into `accounts.json`, default `LINKUSDT-PERP`):
+Any extra args after the script path pass straight through to `k6 run` — e.g. override the
+target market with `PERF_MARKET` (Tier 1 defaults to `BTCUSDT-PERP`; Tier 2/3 use whatever
+`--market` the arrange script wrote into `accounts.json`, default `LINKUSDT-PERP`):
 
 ```bash
-PERF_MARKET=ETHUSDT-PERP k6 run perf/scripts/market-data/smoke.js
+perf/run.sh perf/scripts/market-data/smoke.js -e PERF_MARKET=ETHUSDT-PERP
 ```
 
 `NIMBUS_UAT_TRADING_BASE`/`NIMBUS_UAT_AUTH_BASE` etc. must be in your shell environment — the
@@ -108,6 +112,26 @@ same `.env` the Python side already uses:
 export $(grep -v '^#' .env | xargs)
 ```
 
+## What you get after every run, automatically
+
+`perf/run.sh` always captures raw request-level output (`--out json=...` to
+`perf/results/<script>-<timestamp>.ndjson`, git-ignored, kept for later re-analysis) and runs
+two reports against it after k6 finishes — on top of k6's own terminal summary (per-check
+pass/fail %, `http_req_duration` percentiles, `http_req_failed` rate, and a non-zero exit code
+if any `thresholds` fail — that exit code is the real "alert," `echo $?` after any run):
+
+- **`tools/status_code_breakdown.sh`** — every distinct HTTP status code actually seen, not
+  just 200-vs-not. k6 only keeps a per-tag breakdown for values a threshold references, so a
+  stray 400/429/503 silently never appears in the plain summary otherwise.
+- **`tools/time_trend_report.py`** — first-half vs second-half comparison of the run: is p95
+  creeping up, is the fail rate rising later on. The question a `stress`/`load` run exists to
+  answer, which one averaged summary line hides by design. Flags itself as low-confidence on
+  small (smoke-scale) samples rather than pretending to a trend that isn't really there.
+
+Both are adapted from the practice repo's `scripts/analyze-time-trend.sh` /
+`scripts/count-status-codes.sh` — same logic, wired to run automatically instead of needing a
+separate manual invocation.
+
 ## Visualizing results
 
 No `docker-compose.yml`/Grafana stack is duplicated into this repo — reuse the one already set
@@ -116,8 +140,10 @@ up at `/Users/pk/Documents/LearningQA/performance/docker-compose.yml`:
 ```bash
 cd /Users/pk/Documents/LearningQA/performance && docker compose up -d
 cd -   # back to neodax-python
-k6 run --out experimental-prometheus-rw perf/scripts/market-data/load.js
-# open http://localhost:3000 (admin/admin) -> Dashboards -> "k6 Prometheus"
+perf/run.sh perf/scripts/market-data/load.js --out experimental-prometheus-rw
+# k6 accepts multiple --out flags -- this streams to Prometheus AND still writes run.sh's own
+# ndjson file for the automatic analysis above. open http://localhost:3000 (admin/admin) ->
+# Dashboards -> "k6 Prometheus"
 ```
 
 ## Writing up results
