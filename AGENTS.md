@@ -26,6 +26,12 @@ with a valid JWT); it needs a wallet wagmi/AppKit actually recognizes as connect
 cd e2e && npm install && npx playwright install chromium && npx playwright test
 ```
 
+## Performance (separate k6 project — manual only, NEVER in CI)
+`perf/` is k6 load/performance testing, three safety tiers (market-data / account-reads /
+order-placement — see `perf/README.md`). No workflow references it; it only ever runs on
+demand. `tools/arrange_perf_accounts.py` provisions its accounts, same pattern as
+`arrange_metamask_e2e.py` for `e2e/`.
+
 ## ⚠️ Safety rails — READ BEFORE RUNNING OR EDITING
 - Tests hit **live environments and spend real balance.** There is no isolated "test" env.
 - **`uat`** = fresh auto-funded wallets. **`stage`** = a FIXED pre-funded pool
