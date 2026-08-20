@@ -26,7 +26,7 @@ tiers so "load test" never accidentally means "spam real orders."
 |---|---|---|---|---|
 | **1 — safe** | `scripts/market-data/` | Public reads: `exchangeInfo`, `market-risk-tiers`, `orderbook`, `funding-rates` | None | smoke/load/stress, no cap |
 | **2 — moderate** | `scripts/account-reads/` | Authenticated reads: account/balance/positions | JWT, refreshed | smoke/load, **capped at provisioned account count** |
-| **3 — real money** | `scripts/order-placement/` | Places + cancels a real (never-filling) resting order | JWT, refreshed | **smoke only, always** |
+| **3 — real money** | `scripts/order-placement/` | Places + cancels a real (never-filling) resting order | JWT, refreshed | smoke/load/stress, **capped at provisioned account count** |
 
 **Start at Tier 1, always.** It needs no provisioning, touches no state, and is the cheapest
 possible confirmation the target and script are both alive — the same role
@@ -61,11 +61,16 @@ JSON, no signing needed.
 
 - **Tier 1 by default.** Only reach for Tier 2/3 deliberately.
 - **Tier 2 VU count ≤ provisioned account count.** See above.
-- **Tier 3 is smoke-only, on purpose — no load/stress/soak script exists for order placement.**
-  It targets `LINKUSDT-PERP` (idle, confirmed live-tradeable this session — see
-  `CONVENTIONS.md`'s UAT market allocation), never the shared default `BTCUSDT-PERP`/`ETHUSDT`
-  or the liquidation tests' `SUIUSDT-PERP`/`DOGEUSDT-PERP`. If you ever add heavier
-  order-placement load, pick a different idle market from that same list and update it there.
+- **Tier 3's real-money risk is capped by design, not by scale.** Every order rests 10% off-mark
+  and never fills (mirrors `test_orders.py`) — no position/PnL risk at any VU count. The one
+  thing that scales with load is a resting order getting orphaned on the shared book if its own
+  cancel fails; `lib/orders.js` retries cancellation (idempotent, unlike placement — see its own
+  comment) specifically to keep that safe under `load.js`/`stress.js`. It targets
+  `LINKUSDT-PERP` (idle, confirmed live-tradeable this session — see `CONVENTIONS.md`'s UAT
+  market allocation), never the shared default `BTCUSDT-PERP`/`ETHUSDT` or the liquidation
+  tests' `SUIUSDT-PERP`/`DOGEUSDT-PERP`.
+- **No `soak.js` for Tier 3 (or any tier, yet).** Long-duration leak-hunting is a real gap in
+  this suite right now — see `METRICS_AND_MONITORING.md` §3.
 - **Check `gh run list --status in_progress --status queued` before any run.** This hits the
   same shared UAT environment as the pytest `@trades`/`@serial` lanes and `e2e/` — concurrent
   live traffic against a thin shared market corrupts both runs, exactly like the CI-vs-CI
@@ -92,9 +97,15 @@ python3 tools/arrange_perf_accounts.py --count 10
 perf/run.sh perf/scripts/account-reads/smoke.js
 perf/run.sh perf/scripts/account-reads/load.js
 
-# Tier 3 — provision first, smoke only
+# Tier 3 — provision first (fresh every time, 60s TTL)
 python3 tools/arrange_perf_accounts.py --count 2
 perf/run.sh perf/scripts/order-placement/smoke.js
+
+python3 tools/arrange_perf_accounts.py --count 5   # match load.js's peak VU target
+perf/run.sh perf/scripts/order-placement/load.js
+
+python3 tools/arrange_perf_accounts.py --count 15  # match stress.js's peak VU target
+perf/run.sh perf/scripts/order-placement/stress.js
 ```
 
 Any extra args after the script path pass straight through to `k6 run` — e.g. override the

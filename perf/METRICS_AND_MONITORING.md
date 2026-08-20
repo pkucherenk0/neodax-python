@@ -84,7 +84,9 @@ isn't NeoDax-specific.
 | `market-data/stress.js` | Escalating steps past peak | Where market-data reads actually start to degrade, and whether they recover once load drops (its final stage) |
 | `account-reads/smoke.js` | 1 VU, brief | Auth/token-refresh plumbing works at all |
 | `account-reads/load.js` | Ramp, capped at account count | Whether the auth/refresh path holds up under realistic concurrent read traffic |
-| `order-placement/smoke.js` | 1 VU, 3 iterations | Order-placement + cancel latency and correctness — **not** a resource/degradation test, by design (real money, see `README.md`) |
+| `order-placement/smoke.js` | 1 VU, 3 iterations | Order-placement + cancel latency and correctness at minimal load |
+| `order-placement/load.js` | Ramp, capped at account count | Whether order-placement/cancel latency holds up under realistic concurrent trading traffic — the highest-value question this whole suite answers, since order-placement degrading under load is the most operationally important failure mode for a trading system |
+| `order-placement/stress.js` | Escalating steps past peak, capped at account count | Where order placement actually starts to degrade, and whether it recovers once load drops (its final stage). Stays safe to escalate because every order still never fills (no position/PnL risk) and cancellation retries at every scale — see `lib/orders.js` |
 
 **Gap, on purpose (for now):** no `soak.js` exists in any tier yet, so nothing here can currently
 answer the leak question in §2 — a leak needs sustained load over a long duration to distinguish
