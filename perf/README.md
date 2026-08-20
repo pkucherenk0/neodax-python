@@ -132,6 +132,11 @@ Both are adapted from the practice repo's `scripts/analyze-time-trend.sh` /
 `scripts/count-status-codes.sh` — same logic, wired to run automatically instead of needing a
 separate manual invocation.
 
+**See `METRICS_AND_MONITORING.md`** for the full picture: every metric in the table above
+explained, plus what to watch server-side (CPU, RAM/leaks, connection pools — no GPU, this
+stack doesn't have one) if you have any visibility into the backend under test, and which tier
+is good at surfacing which failure mode.
+
 ## Visualizing results
 
 No `docker-compose.yml`/Grafana stack is duplicated into this repo — reuse the one already set
