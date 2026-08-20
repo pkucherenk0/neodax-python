@@ -9,17 +9,24 @@ equivalent) -- pure JSON, no signing needed.
 
 access_token TTL is 60s and refresh_token is single-use/rotating (see lib/auth.py) -- this file
 goes stale in about a minute. Run it immediately before every k6 run that needs auth
-(scripts/account-reads/, scripts/order-placement/); never reuse a stale copy across sessions,
-same as e2e/.arrangement.json.
+(scripts/account-reads/, scripts/order-placement/, scripts/order-matching/); never reuse a stale
+copy across sessions, same as e2e/.arrangement.json.
 
 --count N (default 5) subject accounts (spot+perp funded), one dedicated per k6 VU -- a k6 VU
 count above N means two VUs would share an account and race on refresh_token rotation, breaking
-one of them. Plus one `maker` account (spot+perp funded) for order-placement's resting
-counterparty. `market` in the output defaults to an idle-and-confirmed-tradeable market from
-CONVENTIONS.md's UAT allocation (LINKUSDT-PERP) -- never the shared default (BTC/ETH) or the
-liquidation tests' SUI/DOGE.
+one of them. `market` in the output defaults to an idle-and-confirmed-tradeable market from
+CONVENTIONS.md's UAT allocation (LINKUSDT-PERP) -- used by scripts/order-placement/ (never fills,
+so no price impact); never the shared default (BTC/ETH) or the liquidation tests' SUI/DOGE.
 
-run (repo root, venv active): python3 tools/arrange_perf_accounts.py [--count N] [--market SYMBOL]
+--pairs N (default 0, skip) maker+taker PAIRS for scripts/order-matching/ -- unlike
+order-placement, these fill for real, so each pair gets its own dedicated maker+taker (2N
+accounts), never shared across pairs or with the --count subjects above, same
+rotation-race reasoning. `matching_market` defaults to BNBUSDT-PERP -- idle, confirmed
+live-tradeable, and deliberately NOT the same market as order-placement's (real fills move
+price on a thin market; order-placement's never-filling orders don't).
+
+run (repo root, venv active):
+  python3 tools/arrange_perf_accounts.py [--count N] [--market SYMBOL] [--pairs N] [--matching-market SYMBOL]
 """
 from __future__ import annotations
 
@@ -44,6 +51,7 @@ from lib.funding import faucet_deposit, get_perp_available, get_spot_available, 
 
 OUT = Path(__file__).resolve().parent.parent / "perf" / "data" / "accounts.json"
 DEFAULT_MARKET = "LINKUSDT-PERP"  # idle, confirmed live-tradeable -- see CONVENTIONS.md
+DEFAULT_MATCHING_MARKET = "BNBUSDT-PERP"  # idle, confirmed live-tradeable, separate from DEFAULT_MARKET
 
 
 def _sig_hex(sig: bytes) -> str:
@@ -77,9 +85,12 @@ def _mint_fund_and_auth(auth_ctx, faucet_ctx, trading_ctx_factory, pw, role: str
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--count", type=int, default=5, help="number of subject accounts (default 5)")
     parser.add_argument("--market", default=DEFAULT_MARKET, help=f"perp market for order-placement (default {DEFAULT_MARKET})")
+    parser.add_argument("--pairs", type=int, default=0, help="number of maker+taker pairs for order-matching (default 0, skip)")
+    parser.add_argument("--matching-market", default=DEFAULT_MATCHING_MARKET,
+                        help=f"perp market for order-matching (default {DEFAULT_MATCHING_MARKET})")
     args = parser.parse_args()
 
     cfg = resolve_env("uat")
@@ -92,7 +103,13 @@ def main() -> None:
 
         accounts = [_mint_fund_and_auth(auth_ctx, faucet_ctx, trading_ctx_factory, pw, f"subject-{i+1}")
                     for i in range(args.count)]
-        maker = _mint_fund_and_auth(auth_ctx, faucet_ctx, trading_ctx_factory, pw, "maker")
+        pairs = [
+            {
+                "maker": _mint_fund_and_auth(auth_ctx, faucet_ctx, trading_ctx_factory, pw, f"pair-{i+1}-maker"),
+                "taker": _mint_fund_and_auth(auth_ctx, faucet_ctx, trading_ctx_factory, pw, f"pair-{i+1}-taker"),
+            }
+            for i in range(args.pairs)
+        ]
 
         auth_ctx.dispose()
         faucet_ctx.dispose()
@@ -101,10 +118,11 @@ def main() -> None:
     OUT.write_text(json.dumps({
         "env": {"trading_base": cfg.trading_base, "auth_base": cfg.auth_base},
         "market": args.market,
+        "matching_market": args.matching_market,
         "accounts": accounts,
-        "maker": maker,
+        "pairs": pairs,
     }, indent=2))
-    print(f"wrote {OUT} ({len(accounts)} subject accounts + 1 maker)")
+    print(f"wrote {OUT} ({len(accounts)} subject accounts, {len(pairs)} maker+taker pairs)")
 
 
 if __name__ == "__main__":

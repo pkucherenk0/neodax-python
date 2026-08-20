@@ -16,21 +16,32 @@ brew install k6
 k6 version
 ```
 
-## The three tiers — read this before running anything
+## The four tiers — read this before running anything
 
 This repo's endpoints span a much wider risk range than a public sandbox API: some are free
-public reads, some place real orders on a live shared UAT market. The suite is split into three
-tiers so "load test" never accidentally means "spam real orders."
+public reads, some place real orders on a live shared UAT market, and one actually fills those
+orders. The suite is split into tiers so "load test" never accidentally means "spam real orders"
+or "open real positions."
 
 | Tier | Folder | What | Auth | Scale |
 |---|---|---|---|---|
 | **1 — safe** | `scripts/market-data/` | Public reads: `exchangeInfo`, `market-risk-tiers`, `orderbook`, `funding-rates` | None | smoke/load/stress, no cap |
 | **2 — moderate** | `scripts/account-reads/` | Authenticated reads: account/balance/positions | JWT, refreshed | smoke/load, **capped at provisioned account count** |
 | **3 — real money** | `scripts/order-placement/` | Places + cancels a real (never-filling) resting order | JWT, refreshed | smoke/load/stress, **capped at provisioned account count** |
+| **4 — real fills** | `scripts/order-matching/` | Maker+taker pair actually crosses and fills, then flattens both sides | JWT, refreshed (×2 per pair) | **smoke only, on purpose** — see below |
 
 **Start at Tier 1, always.** It needs no provisioning, touches no state, and is the cheapest
 possible confirmation the target and script are both alive — the same role
 `test-types/smoke-test.js` plays in the practice repo.
+
+**Tier 4 is a different risk category from Tier 3, not just a bigger version of it.** Tier 3's
+orders are designed to never fill (10% off-mark) — zero position/PnL exposure at any scale.
+Tier 4 orders are designed **to** fill — that's the point, it's testing the match path itself —
+which means real position/PnL exposure exists for the (brief, immediately-flattened) window
+between fill and flatten. It starts smoke-only (1 VU, 3 iterations) deliberately: this is new
+maker/taker-pairing + fill-confirm + flatten coordination logic that hasn't been proven at any
+scale yet, unlike Tier 3's placement/cancel which was already a known-good pattern from the
+pytest suites before this script existed.
 
 ## Why Tiers 2/3 need their own account provisioning
 
@@ -39,13 +50,15 @@ this app's auth needs a real wallet signature (`eth_account`, same as
 `tools/arrange_metamask_e2e.py`). Minting stays a Python-side job:
 
 ```bash
-python3 tools/arrange_perf_accounts.py            # 5 subject accounts + 1 maker (defaults)
-python3 tools/arrange_perf_accounts.py --count 20 # match your target VU count
+python3 tools/arrange_perf_accounts.py                        # 5 subject accounts (default), no pairs
+python3 tools/arrange_perf_accounts.py --count 20              # match your target VU count (Tier 2/3)
+python3 tools/arrange_perf_accounts.py --count 0 --pairs 1      # 1 maker+taker pair, no subjects (Tier 4)
 ```
 
 This writes `perf/data/accounts.json` (git-ignored — it holds live JWTs). k6 only ever calls
 `POST /auth/refresh` with an already-valid `refresh_token` from there on (`lib/auth.js`) — pure
-JSON, no signing needed.
+JSON, no signing needed. Tier 4's maker+taker pairs are separate accounts from Tier 2/3's
+`--count` subjects — provision only what the tier you're about to run actually needs.
 
 **Two things that make this different from a normal login-pool pattern:**
 - **Access tokens expire in 60s.** `perf/data/accounts.json` goes stale in about a minute —
@@ -69,8 +82,18 @@ JSON, no signing needed.
   `LINKUSDT-PERP` (idle, confirmed live-tradeable this session — see `CONVENTIONS.md`'s UAT
   market allocation), never the shared default `BTCUSDT-PERP`/`ETHUSDT` or the liquidation
   tests' `SUIUSDT-PERP`/`DOGEUSDT-PERP`.
-- **No `soak.js` for Tier 3 (or any tier, yet).** Long-duration leak-hunting is a real gap in
-  this suite right now — see `METRICS_AND_MONITORING.md` §3.
+- **Tier 4's risk is real but bounded and short-lived, not eliminated.** A fill means real
+  position/PnL exposure exists for both sides — `scripts/order-matching/smoke.js` confirms the
+  fill, then immediately flattens both sides with a reduce-only order that retries (idempotent,
+  same reasoning as Tier 3's cancel — see `lib/orders.js`'s `closePositionWithRetry`). Notional
+  per fill is deliberately tiny (`NOTIONAL_USD = 500`) to minimize price impact on a thin market.
+  It targets `BNBUSDT-PERP` — separate from Tier 3's `LINKUSDT-PERP` on purpose, since real fills
+  move price on a thin market and Tier 3's never-filling orders don't; the two tiers should never
+  share a market. **Smoke-only for now** — no `load.js`/`stress.js` exists for Tier 4 yet, by
+  explicit choice, until the maker/taker-pairing + fill-confirm + flatten coordination has been
+  proven at 1 VU first.
+- **No `soak.js` for any tier, yet.** Long-duration leak-hunting is a real gap in this suite
+  right now — see `METRICS_AND_MONITORING.md` §3.
 - **Check `gh run list --status in_progress --status queued` before any run.** This hits the
   same shared UAT environment as the pytest `@trades`/`@serial` lanes and `e2e/` — concurrent
   live traffic against a thin shared market corrupts both runs, exactly like the CI-vs-CI
@@ -106,6 +129,10 @@ perf/run.sh perf/scripts/order-placement/load.js
 
 python3 tools/arrange_perf_accounts.py --count 15  # match stress.js's peak VU target
 perf/run.sh perf/scripts/order-placement/stress.js
+
+# Tier 4 — provision a maker+taker pair first (fresh every time, 60s TTL)
+python3 tools/arrange_perf_accounts.py --count 0 --pairs 1
+perf/run.sh perf/scripts/order-matching/smoke.js
 ```
 
 Any extra args after the script path pass straight through to `k6 run` — e.g. override the

@@ -52,3 +52,27 @@ export function placeAndCancelRestingOrder(envCfg, market, account, headers) {
     check(res, { 'cancel: 200': (r) => r.status === 200 });
   });
 }
+
+// Closes (reduce-only market order) a real position with the same bounded retry, for the same
+// reason: closing an already-flat position is a safe no-op, unlike opening one, so retrying a
+// transient failure here is the right way to avoid leaving real exposure open -- not a
+// violation of the no-retries rail (CONVENTIONS.md #8 is about OPENING a position/order).
+// Used by scripts/order-matching/ once a fill is confirmed.
+export function closePositionWithRetry(envCfg, market, account, side, direction, amount, headers) {
+  let res;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    res = http.post(`${envCfg.trading_base}/perpetual/order`, JSON.stringify({
+      app_session_id: account.address,
+      market,
+      side,
+      direction,
+      type: 'market',
+      amount,
+      reduce_only: true,
+      leverage: '5',
+    }), headers);
+    if (res.status === 200) break;
+    sleep(0.3);
+  }
+  return res;
+}

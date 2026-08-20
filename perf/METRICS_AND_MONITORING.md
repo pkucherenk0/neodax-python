@@ -87,10 +87,14 @@ isn't NeoDax-specific.
 | `order-placement/smoke.js` | 1 VU, 3 iterations | Order-placement + cancel latency and correctness at minimal load |
 | `order-placement/load.js` | Ramp, capped at account count | Whether order-placement/cancel latency holds up under realistic concurrent trading traffic — the highest-value question this whole suite answers, since order-placement degrading under load is the most operationally important failure mode for a trading system |
 | `order-placement/stress.js` | Escalating steps past peak, capped at account count | Where order placement actually starts to degrade, and whether it recovers once load drops (its final stage). Stays safe to escalate because every order still never fills (no position/PnL risk) and cancellation retries at every scale — see `lib/orders.js` |
+| `order-matching/smoke.js` | 1 VU, 3 iterations, maker+taker pair | Whether the match path itself (rest → cross → fill → confirm → flatten) works correctly at minimal load — a qualitatively different question from Tier 3, which never exercises matching at all. **Smoke-only for now**, by explicit choice: this is new coordination logic (maker/taker pairing, fill-confirm polling, dual-sided flatten) that needs to be proven correct at 1 VU before any load/stress shape gets built on top of it. |
 
 **Gap, on purpose (for now):** no `soak.js` exists in any tier yet, so nothing here can currently
 answer the leak question in §2 — a leak needs sustained load over a long duration to distinguish
-from normal warm-up, which none of the current scripts are shaped for. If you add one, model it
-on the practice repo's `test-types/soak-test.js` (moderate, sustained VUs, long duration) against
+from normal warm-up, which none of the current scripts are shaped for. Likewise, `order-matching/`
+has no `load.js`/`stress.js` yet either — real fills are a fundamentally higher-risk category than
+Tier 3's never-filling orders, so that escalation (if it happens) needs its own deliberate
+go-ahead, not an automatic "make it bigger" once smoke passes. If you add a soak test, model it on
+the practice repo's `test-types/soak-test.js` (moderate, sustained VUs, long duration) against
 Tier 1 first — it's the only tier with no account-count ceiling to worry about over a multi-hour
 run.
