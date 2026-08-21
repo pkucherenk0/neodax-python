@@ -4,3 +4,4 @@ __pycache__/
 .arrangement.json
 test-results/
 screenshots/
+results/

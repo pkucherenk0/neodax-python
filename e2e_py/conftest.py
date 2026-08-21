@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from playwright.sync_api import Page
 
 from lib.arrangement import Arrangement, ARRANGEMENT_PATH, load_arrangement
+from lib.artifacts import record_account
 from lib.wallet import install_wallet_for
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -31,7 +32,10 @@ def _arrange() -> None:
 
 @pytest.fixture(scope="session")
 def arrangement(_arrange: None) -> Arrangement:
-    return load_arrangement()
+    a = load_arrangement()
+    record_account(role="subject", address=a.subject.address, secret=a.subject.mnemonic)
+    record_account(role="maker", address=a.maker.address, secret=a.maker.private_key)
+    return a
 
 
 @pytest.fixture
