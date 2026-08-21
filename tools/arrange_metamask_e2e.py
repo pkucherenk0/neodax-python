@@ -40,8 +40,17 @@ Account.enable_unaudited_hdwallet_features()
 from configs.competition import funding, perp_market
 from lib.env import resolve_env
 from lib.funding import faucet_deposit, get_perp_available, get_spot_available, transfer_spot_to_perp, wait_for_balance
+from lib.http import DEFAULT_RPS, RateLimiter, ResilientClient, ResilientOptions
 
 DEFAULT_OUT = Path(__file__).resolve().parent.parent / "e2e" / ".arrangement.json"
+
+# funding setup takes more transient 5xx than the hot path (same reasoning as
+# fixtures/accounts.py's PATIENT_RETRIES) -- hit both a 404 account_not_found (spot balance
+# read, right after a fresh deposit) and a 503 validation_unavailable (spot->perp transfer)
+# from this exact script during the e2e_py migration's confidence runs. This script used bare,
+# non-retrying contexts throughout (unlike fixtures/accounts.py's ClientFactory.make(...,
+# max_retries=...)) -- fixed here since both the current Node e2e/ and e2e_py depend on it.
+PATIENT_RETRIES = 6
 
 
 def _sig_hex(sig: bytes) -> str:
@@ -71,14 +80,19 @@ def main() -> None:
     out = args.out
 
     cfg = resolve_env("uat")
+    limiter = RateLimiter(DEFAULT_RPS)
+    resilient_opts = ResilientOptions(max_retries=PATIENT_RETRIES, retry_on_5xx=True)
+
     with sync_playwright() as pw:
         auth_ctx = pw.request.new_context(base_url=cfg.auth_base)
-        faucet_ctx = pw.request.new_context(base_url=cfg.faucet_url)
+        faucet_raw = pw.request.new_context(base_url=cfg.faucet_url)
+        faucet_ctx = ResilientClient(faucet_raw, limiter, resilient_opts)
 
         subject_wallet, subject_mnemonic = Account.create_with_mnemonic()
         subject_address, subject_token = _mint_and_auth(auth_ctx, subject_wallet)
-        subject_trading = pw.request.new_context(base_url=cfg.trading_base,
-                                                  extra_http_headers={"Authorization": f"Bearer {subject_token}"})
+        subject_trading_raw = pw.request.new_context(base_url=cfg.trading_base,
+                                                      extra_http_headers={"Authorization": f"Bearer {subject_token}"})
+        subject_trading = ResilientClient(subject_trading_raw, limiter, resilient_opts)
         faucet_deposit(faucet_ctx, subject_address, funding.spot_usdt)
         wait_for_balance(lambda: get_spot_available(subject_trading, subject_address),
                          float(funding.spot_usdt) * 0.9, funding.settle_timeout_s)
@@ -86,8 +100,9 @@ def main() -> None:
 
         maker_wallet = Account.create()
         maker_address, maker_token = _mint_and_auth(auth_ctx, maker_wallet)
-        maker_trading = pw.request.new_context(base_url=cfg.trading_base,
-                                                extra_http_headers={"Authorization": f"Bearer {maker_token}"})
+        maker_trading_raw = pw.request.new_context(base_url=cfg.trading_base,
+                                                    extra_http_headers={"Authorization": f"Bearer {maker_token}"})
+        maker_trading = ResilientClient(maker_trading_raw, limiter, resilient_opts)
         faucet_deposit(faucet_ctx, maker_address, funding.spot_usdt)
         wait_for_balance(lambda: get_spot_available(maker_trading, maker_address),
                          float(funding.spot_usdt) * 0.9, funding.settle_timeout_s)
@@ -97,9 +112,9 @@ def main() -> None:
         print(f"maker funded (spot+perp): {maker_address}")
 
         auth_ctx.dispose()
-        faucet_ctx.dispose()
-        subject_trading.dispose()
-        maker_trading.dispose()
+        faucet_raw.dispose()
+        subject_trading_raw.dispose()
+        maker_trading_raw.dispose()
 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({
