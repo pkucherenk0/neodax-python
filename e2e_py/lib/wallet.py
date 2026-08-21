@@ -41,15 +41,31 @@ _WALLET_ANNOUNCE_JS = """
 
 def install_wallet_for(page: Page, mnemonic: str) -> None:
     """Installs the mock wallet for `mnemonic` on `page` -- call before page.goto(), same as
-    the old wallet.ts (add_init_script only applies to the next navigation)."""
+    the old wallet.ts (add_init_script only applies to the next navigation). Chain choice
+    (mainnet, see eth_chainId below) doesn't matter: this app never does a real on-chain
+    read/write, it's just a stable default matching the old wallet.ts's own choice."""
     account = Account.from_mnemonic(mnemonic)
 
     def eip1193_request(request: dict):
-        """Runner-side signing -- the browser shim never sees a private key."""
+        """Runner-side signing -- the browser shim never sees a private key. Method coverage
+        mirrors @johanneskares/wallet-mock's createWallet.js exactly (see e2e/node_modules/
+        @johanneskares/wallet-mock/dist/createWallet.js) -- the FIRST live run of this port
+        missed wallet_getPermissions/wallet_switchEthereumChain/eth_chainId (wagmi calls these
+        during its own connector init, before ever calling eth_requestAccounts) and hung
+        forever waiting for a connected-state signal that never arrived, since the original's
+        real viem walletClient answers these silently -- my port just threw instead."""
         method = request.get("method")
         params = request.get("params") or []
         if method in ("eth_requestAccounts", "eth_accounts"):
             return [account.address]
+        if method in ("wallet_requestPermissions", "wallet_revokePermissions"):
+            return [{"parentCapability": "eth_accounts"}]
+        if method == "wallet_getPermissions":
+            return []
+        if method == "wallet_switchEthereumChain":
+            return None
+        if method == "eth_chainId":
+            return "0x1"  # mainnet -- this app never does a real on-chain read/write, see install_wallet_for
         if method == "personal_sign":
             message_hex = params[0]
             message_bytes = bytes.fromhex(message_hex[2:] if message_hex.startswith("0x") else message_hex)
