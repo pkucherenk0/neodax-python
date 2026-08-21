@@ -57,7 +57,5 @@ def test_spot_to_perp_transfer_ui_limit_order_matched_by_api_counterparty_positi
               "position should appear in Positions after the API counterparty match").to_be_visible()
     finally:
         open_orders.cancel_any_open_order()
-        # flatten BOTH sides by crossing them against each other -- a plain reduce-only close
-        # alone can't find a counterparty on this thin market (confirmed live). see
-        # flatten_subject_and_maker's own docstring.
+        # flatten both sides by crossing them together -- thin market, plain reduce-only can't find a counterparty. see flatten_subject_and_maker docstring.
         flatten_subject_and_maker(playwright, arrangement)

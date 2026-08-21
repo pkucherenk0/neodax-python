@@ -37,10 +37,7 @@ def long_size(positions) -> float:
     return sum(float(p.amount) for p in positions if p.direction == "long")
 
 
-# module state: teardown restores every injected mark even if a test throws (blast-radius
-# safety). LIST, not a single dict -- test_1 and test_2 run on separate markets (see
-# configs.competition.TieredReductionCfg), so both entries must survive to teardown even if
-# one test crashes before its own inline restore and the other overwrites this after it.
+# teardown restore ALL injected marks, even on throw. list not dict -- test_1/test_2 diff markets, both must survive.
 state: dict = {"restore": []}
 
 
@@ -125,12 +122,8 @@ class TestPerpTieredPositionReduction:
             subject.trading_client, subject.app_session_id,
             type="liquidation_partial", market=mkt.market, page_size=200).items)
 
-        # act 3 — drop the mark in small steps; each step peels one tier. (holds/re-injects internally.)
-        # ttl 60s, max_steps x step_hold_s can run minutes. size_of refreshes token each poll.
-        # stop after 2 reductions (proves genuinely PIECE-by-piece, plural, matching this test's
-        # own name) instead of walking all max_steps: confirmed live this was burning a dozen+
-        # extra full step_hold_s waits after already having enough proof (min_pieces=1) -- same
-        # early-stop pattern test_2 below already uses via its own max_pieces=1.
+        # act 3 — drop mark in small steps, each peels one tier (holds/re-injects internally). ttl 60s, size_of refreshes token each poll.
+        # stop after 2 reductions, not all max_steps -- proves piece-by-piece without burning extra step_hold_s waits (same as test_2's max_pieces=1).
         size_of = auto_refreshing(
             env.cfg, clients, subject,
             lambda: long_size(get_perp_positions(subject.trading_client, subject.app_session_id, mkt.market)),
@@ -153,9 +146,7 @@ class TestPerpTieredPositionReduction:
                                    "reductionSteps": len(reductions), "partialRows": len(partials) - partials_before,
                                    "steps": [s.__dict__ for s in steps]})
 
-        # assert — PIECEWISE: a partial-reduction row (Stage0 one-tier peel, NOT a full close),
-        # size shrank, and the position was observed OPEN at an intermediate size (proves it was
-        # NOT closed all at once). as-built: 1 partial peel then Stage1 full-close -> min_pieces=1.
+        # assert — piecewise: partial row + size shrank + observed open at intermediate size (not closed all at once). see docs/test-cases/perps.md.
         record_check(name=f">= {cfg.min_pieces} LIQUIDATION_PARTIAL rows (piecewise, not a full close)",
                      passed=len(partials) - partials_before >= cfg.min_pieces,
                      detail={"before": partials_before, "after": len(partials)})
@@ -174,9 +165,7 @@ class TestPerpTieredPositionReduction:
         close_all_perp_positions(subject.order_client, subject.app_session_id, mkt.market)
         close_all_perp_positions(maker.order_client, maker.app_session_id, mkt.market)
 
-    # TC-LIQ-030: reduce by EXACTLY one tier, then the account UNLOCKS (stays open, healthy).
-    # fat deposit on a tier-2 position so ONE reduction to tier-1 leaves equity >> tier-1
-    # maintenance -> ladder heals and stops after one tier (no cascade).
+    # TC-LIQ-030: fat deposit on tier-2 -> one reduction to tier-1 heals (equity >> maintenance, no cascade). see docs/test-cases/perps.md.
     @pytest.mark.timeout(900)
     def test_2_tc_liq_030_liquidation_reduces_exactly_one_tier_and_account_unlocks(self, env, clients, new_funded_account):
         assert env.faucet_url, "faucet host needed for mark injection (uat)"
@@ -240,8 +229,7 @@ class TestPerpTieredPositionReduction:
         partials = get_perp_transaction_history(subject.trading_client, subject.app_session_id,
                                                 type="liquidation_partial", market=mkt.market, page_size=200).items
         reductions = [s for s in steps if s.size_after < s.size_before - 1e-9]
-        # price reduction at the mark active when it happened, not the later-restored one --
-        # mixing price-A reduction with price-B (post-restore) notional is an unbounded confound.
+        # notional at the mark active during reduction, not the later-restored mark (mixing the two is an unbounded confound).
         reduction_mark = float(reductions[0].level) if reductions else mark
         reduced_notional = long_after * reduction_mark
         record("one-tier result", {"openLong": open_long, "longAfter": long_after,

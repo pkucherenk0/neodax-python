@@ -8,38 +8,24 @@ crypto perpetuals/spot trading platform (anonymized for public sharing — real 
 scrubbed).
 
 **Highlights, for a fast skim:**
-- **Contract-first API testing** — every response validated against a pydantic schema
-  (`lib/schemas.py`), not just status codes; domain math (fees, tiers, liquidation pricing)
-  lives in framework-agnostic `lib/` and is unit-tested offline (`tests/unit/`).
-- **Safety-railed live-money testing** — trading tests place real orders against a live
-  environment with hard rails: no retries ever on order placement (a retry doubles volume),
-  trading lanes opt-in only, ordered/stateful flows isolated via `xdist_group`. See
-  `CONVENTIONS.md`.
-- **Anti-false-positive discipline** — `tools/red_green.py` proves a test can actually go red
-  before trusting it green; `tools/api_coverage.py` diffs the BE endpoint registry against test
-  coverage. See `CONVENTIONS.md` §13.
-- **Real UI e2e** (`e2e/`) — a separate pytest + Playwright project, Page-Object-Model
-  structured, driving the actual frontend through a mock EIP-1193 wallet (real signatures, no
-  browser extension, no Node dependency). Ported from an earlier Node/Playwright version of
-  this same suite.
-- **k6 performance suite** (`perf/`) — a manual-only (never-in-CI) load/stress suite, tiered by
-  blast radius (public reads → authed reads → real-but-never-filling orders → real matched
-  fills), with automatic post-run analysis and a documented client+server metrics/monitoring
-  guide. See `perf/README.md`.
-- **CI-integrated** — `pr-check.yml` (required PR gate) and `ci.yml` (full lane on every push),
-  parallelized via `pytest-xdist`.
+| | |
+|---|---|
+| Contract-first API testing | every response validated against a pydantic schema (`lib/schemas.py`), not just status codes. domain math (fees, tiers, liquidation pricing) lives in framework-agnostic `lib/`, unit-tested offline (`tests/unit/`). |
+| Safety-railed live-money testing | real orders, hard rails: no retries ever on placement (retry = doubled volume), trading lanes opt-in, ordered/stateful flows isolated via `xdist_group`. See `CONVENTIONS.md`. |
+| Anti-false-positive discipline | `tools/red_green.py` proves a test can go red before trusting it green; `tools/api_coverage.py` diffs BE endpoint registry vs test coverage. See `CONVENTIONS.md` §13. |
+| Real UI e2e (`e2e/`) | separate pytest + Playwright project, POM-structured, drives the real FE through a mock EIP-1193 wallet (real signatures, no browser extension, no Node). |
+| k6 performance suite (`perf/`) | manual-only (never in CI), tiered by blast radius (public reads → authed reads → never-filling orders → real fills), automatic post-run analysis. See `perf/README.md`. |
+| CI-integrated | `pr-check.yml` (required PR gate) + `ci.yml` (full lane every push), parallelized via `pytest-xdist`. |
 
 Three layers of the harness itself:
-- **API integration** (`suites/`, `tests/unit/`) — **pytest + Playwright in API mode** (no
-  browser), with response-shape validation via [pydantic](https://docs.pydantic.dev). Domain
-  logic lives in `lib/`; specs are thin **Arrange → Act → Assert** wrappers.
-- **UI e2e** (`e2e/`) — a separate pytest + Playwright project (own venv, own `pytest.ini`)
-  driving the real FE through a mock EIP-1193 wallet (real signatures, no browser extension).
-  Lives outside the main suite because it needs a real browser and its own dependency set. Page
-  objects in `pages/`, shared modals in `components/`. See `e2e/README` / `AGENTS.md` for why
-  and how.
-- **Performance** (`perf/`) — a separate k6 project, run manually on demand only — **never
-  wired into CI**. See `perf/README.md`.
+- **API integration** (`suites/`, `tests/unit/`) — pytest + Playwright in **API mode** (no
+  browser), response-shape validated via [pydantic](https://docs.pydantic.dev). Domain logic in
+  `lib/`; specs are thin **Arrange → Act → Assert** wrappers.
+- **UI e2e** (`e2e/`) — separate pytest + Playwright project (own venv, own `pytest.ini`), real
+  browser + own deps so it lives outside the main suite. Mock EIP-1193 wallet; page objects in
+  `pages/`, shared modals in `components/`. See `e2e/README.md` / `AGENTS.md`.
+- **Performance** (`perf/`) — separate k6 project, manual-only, **never wired into CI**. See
+  `perf/README.md`.
 
 > ⚠️ **These tests hit live environments and can spend real balance.** Read the safety rails
 > below and in [`AGENTS.md`](./AGENTS.md) before running anything that trades.
@@ -125,22 +111,29 @@ fixtures/     env / fresh_wallet / account / spot_maker / perp_maker / new_funde
               — the ONLY way specs get clients & accounts. + detailed reporter hooks.
 conftest.py   wires fixtures/ into pytest (pytest_plugins) + --env CLI option
 configs/      typed run params (no CLI-flag archaeology)
-suites/       competition/ + nimbus/ ; TEMPLATE_template.py to copy
+suites/       competition/ + nimbus/{perp,spot}/ ; TEMPLATE_template.py to copy
 tests/unit/   offline unit tests for pure lib math (run first)
 tools/        red_green.py (anti-false-positive) + api_coverage.py (endpoint registry × tests)
-              + arrange_metamask_e2e.py (funds accounts for e2e/, see below; --out overrides
-                the write path)
-              + arrange_perf_accounts.py (funds accounts for perf/, see below)
+              + arrange_metamask_e2e.py (funds e2e/ accounts) + arrange_perf_accounts.py
+              (funds perf/ accounts)
 
 e2e/          SEPARATE pytest + Playwright project (own venv) — UI e2e via a mock EIP-1193
-              wallet, no real MetaMask extension, no Node dependency. pages/ (Page Object
-              Model, one class per FE page/component) + components/ (shared modals) + lib/
-              (wallet mock, API helpers) + tests/. `cd e2e && pytest`. See e2e/README
-              or AGENTS.md. Ported from an earlier Node/Playwright version of this same suite.
+              wallet, no MetaMask extension, no Node. pages/ + components/ + lib/ + tests/.
+              `cd e2e && pytest`. See e2e/README.md.
 
-perf/         SEPARATE k6 project — performance/load testing, manual only, NEVER wired into
-              CI. Four safety tiers by blast radius (market-data / account-reads /
-              order-placement / order-matching). See perf/README.md.
+perf/         SEPARATE k6 project — load/perf testing, manual only, NEVER wired into CI. Four
+              safety tiers by blast radius. See perf/README.md.
+
+docs/test-cases/   per-topic grug test-case lists (health/perps/spot/competition/e2e), indexed
+                   by TEST_CASES.md — the case-level detail behind the suites/ above.
+results/      per-invocation run output (git-ignored): results/runs/<runId>/, results/latest
+              symlinks the newest. detailed-report.md (human) + detailed/<test>.json (agents).
+.github/workflows/  pr-check.yml (required PR gate) + ci.yml (full lane, push to main).
+
+CONVENTIONS.md    the fixed, enforced test-writing rules — read before writing any test.
+AGENTS.md         entry guide for AI agents and contributors.
+TEST_STRATEGY.md  where each test layer lives + how CI wires across the BE/FE/this repo.
+TEST_CASES.md     index into docs/test-cases/ — add a row when you add a test.
 ```
 
 ## Contributing

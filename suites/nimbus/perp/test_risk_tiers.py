@@ -77,9 +77,7 @@ class TestPerpMarketRiskTiers:
         # act
         tiers = get_market_risk_tiers(client, MARKET)
 
-        # assert — core margin safety invariant. also DB CHECK constraint on BE. tier
-        # maintenance req must sit below initial req, else liquidation could trigger before
-        # position even openable.
+        # assert — core margin safety invariant, also a DB CHECK constraint on BE (else liquidation could trigger before a position is even openable).
         assert len(tiers) >= 1
         for t in tiers:
             record_check(name=f"tier {t.tier_index}: MMR < IMR", passed=t.maintenance_margin_rate < t.initial_margin_rate,
@@ -144,11 +142,7 @@ class TestPerpMarketRiskTiers:
             mm_higher_rate = cap * tiers[i].maintenance_margin_rate
             boundaries.append((tiers[i].tier_index, cap, mm_at_cap, mm_just_over, mm_lower_rate, mm_higher_rate))
 
-        # assert — two distinct props at each tier cap:
-        #   (a) realistic path: position grow across boundary. MM(just over) must never drop
-        #       below MM(at cap). both terms carry notional, cant isolate tier effect alone.
-        #   (b) isolated tier effect: MM for SAME notional under higher vs lower tier rate.
-        #       hold notional fixed, so any increase is purely MMR stepping up.
+        # assert — two props per cap: (a) MM(just over) never drops below MM(at cap); (b) same notional, higher-tier rate never has lower MM.
         rate_jumps = 0
         for tier_index, cap, mm_at_cap, mm_just_over, mm_lower_rate, mm_higher_rate in boundaries:
             rate_stepped = mm_higher_rate > mm_lower_rate

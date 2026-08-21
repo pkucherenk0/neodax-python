@@ -101,9 +101,7 @@ class TestPerpOrderTierLeverageEnforcement:
         tiers = get_market_risk_tiers(account.trading_client, mkt.market)
         assert len(tiers) >= 2, "need a multi-tier ladder to exceed a lower-tier cap"
 
-        # acct leverage can only raise up to per-market cap (max_allowed_leverage), separate
-        # from per-tier cap. so target first tier whose max leverage is BELOW market cap —
-        # only then does over-the-tier yet still-settable acct leverage exist.
+        # target first tier whose max leverage < market cap -- see docs/test-cases/perps.md.
         idx = next((i for i, t in enumerate(tiers) if t.max_leverage < mkt.max_allowed_leverage), -1)
         assert idx > 0, "a tier caps leverage below the market max"
         tier = tiers[idx]
@@ -113,24 +111,19 @@ class TestPerpOrderTierLeverageEnforcement:
         actual_notional = float(amount) * mark
         selected = select_risk_tier_for_notional(tiers, actual_notional)
         leverage = min(mkt.max_allowed_leverage, math.ceil(tier.max_leverage) + 5)
-        # preconditions — notional must sit in target tier and leverage must exceed tier cap
-        # yet stay within settable market cap.
+        # preconditions — notional in target tier, leverage over tier cap but within market cap.
         assert actual_notional <= tier.max_notional_quote, "sized notional stays within the target tier band"
         assert selected and selected.tier_index == tier.tier_index, "sized notional lands in the target tier"
         assert leverage > tier.max_leverage, "chosen leverage exceeds the tier max"
         assert leverage <= mkt.max_allowed_leverage, "chosen leverage is within the settable market cap"
 
-        # cross-margin accts ignore order own leverage field. opening risk-tier check use acct
-        # initial leverage. so flatten first, then raise acct leverage above target tier cap
-        # (allowed while flat: leverage endpoint only run tier check when position open).
+        # cross acct ignore order leverage, tier check use acct leverage -- flatten then raise acct leverage while flat. see docs/test-cases/perps.md.
         close_all_perp_positions(account.order_client, account.app_session_id, mkt.market)
         lev = step(f"set account leverage {leverage}x while flat",
                    lambda: set_perp_leverage(account.order_client, account.app_session_id, mkt.market, leverage))
         assert lev.success, "setting over-tier (but within market cap) leverage is allowed while flat"
 
-        # buy limit 5% below mark: never fills (below touch), so even if enforcement regressed
-        # nothing trades. but opening tier check run at placement, so working engine reject here.
-        # notional use MARK price, not this price.
+        # rest price 5% below mark, never fills -- tier check runs at placement anyway. notional uses MARK price, not this price.
         rest_price = round_tick(mark * 0.95, mkt.tick_size, mkt.price_precision)
         record("rejected-order setup", {"mark": mark, "marketMaxLeverage": mkt.max_allowed_leverage,
                                         "band": {"lowerBound": lower_bound, "cap": tier.max_notional_quote},
@@ -163,7 +156,4 @@ class TestPerpOrderTierLeverageEnforcement:
         assert no_resting, "a rejected order leaves nothing resting"
         assert flat, "a rejected opening order leaves the account flat"
 
-    # note (not tested): risk_tier_exceeded (notional above every tier cap) unreachable on
-    # funded acct — top tier cap 1e12 quote, order amount capped at 1e6 base. the POST
-    # /perpetual/leverage variant (raise leverage WITH open position) shares the same check
-    # function; needs a real fill on thin book to set up, omitted as high-cost / redundant.
+    # not tested: risk_tier_exceeded + the with-position leverage variant -- see docs/test-cases/perps.md.

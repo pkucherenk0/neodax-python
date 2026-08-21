@@ -1,10 +1,9 @@
 # Metrics & monitoring — what to watch, client-side and server-side
 
-Companion to `README.md`. That file says *how* to run things; this one says *what to look at*
-once you have. Two halves: what k6 itself gives you (the client's view), and what to watch in
-system monitoring (Grafana or otherwise) if you have any server-side visibility into the
-backend under test — this is a UAT environment this repo doesn't operate, so how much of the
-second half applies depends entirely on what access you actually have.
+Companion to `README.md` (that one says *how* to run things, this says *what to look at*). Two
+halves: what k6 itself gives you (client's view), and what to watch server-side (Grafana or
+otherwise) — this repo doesn't operate UAT's infrastructure, so how much of the second half
+applies depends on what access you actually have.
 
 ## 1. What k6 reports — every run, client-side only
 
@@ -34,27 +33,18 @@ wire into CI if this suite's stance on that ever changes.
 
 ## 2. What to watch server-side, if you have any visibility
 
-k6's client view can tell you latency went up. It can't tell you *why* — that needs a metric
-from the system actually doing the work. This repo doesn't operate NeoDax's UAT
-infrastructure, so what's realistic depends on what you can actually see:
+k6's client view says latency went up; it can't say *why* — that needs a metric from the system
+doing the work.
 
-- **If the team has an existing Grafana/Prometheus/observability stack for the backend
-  services** (`portfolio_manager_perp`, liquidation, auth, faucet): the highest-value move is
-  overlaying a k6 run's time window on those same dashboards, watching the same minute from both
-  sides at once. That's the only way to tell "DB was the bottleneck" from "app's own connection
-  pool was too small" from "GC pauses" — they all look identical from k6's side (latency went
-  up), and completely different server-side.
-- **If you don't**: you're limited to the client-side view in §1 plus the local k6→Prometheus
-  dashboard (see `README.md`'s "Visualizing results") — genuinely useful for spotting *that*
-  something degraded and *when*, just not *why* on the server. Flag it as a finding for whoever
-  does have that access, the same way `FAILURE_MODES.md` frames this exact gap for its own
-  practice targets.
+| Access | Do this |
+|---|---|
+| Existing Grafana/Prometheus for the backend (`portfolio_manager_perp`, liquidation, auth, faucet) | overlay the k6 run's time window on those dashboards, watch the same minute both sides — the only way to tell "DB bottleneck" from "connection pool too small" from "GC pauses" apart, since all three look identical from k6's side |
+| No backend access | limited to §1's client-side view + the local k6→Prometheus dashboard (`README.md`'s "Visualizing results") — good for spotting *that* and *when* something degraded, not *why*. Flag as a finding for whoever does have access (same gap `FAILURE_MODES.md` frames for its own practice targets) |
 
 ### What's actually worth looking for, by resource
 
-The backend here is Go (`converters.go`, `lock_oneway.go`/`lock_hedge.go` — referenced
-throughout this repo's own `CONVENTIONS.md`/comments), so where a generic checklist would say
-"language-specific tooling," here that specifically means:
+Backend is Go (`converters.go`, `lock_oneway.go`/`lock_hedge.go`), so "language-specific
+tooling" specifically means:
 
 | Resource | Symptom server-side | Symptom in k6 | Go-specific tool |
 |---|---|---|---|

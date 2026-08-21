@@ -18,10 +18,9 @@ k6 version
 
 ## The four tiers — read this before running anything
 
-This repo's endpoints span a much wider risk range than a public sandbox API: some are free
-public reads, some place real orders on a live shared UAT market, and one actually fills those
-orders. The suite is split into tiers so "load test" never accidentally means "spam real orders"
-or "open real positions."
+Endpoints here span free public reads to real fills on a live shared UAT market — split into
+tiers by blast radius so "load test" never accidentally means "spam real orders" or "open real
+positions."
 
 | Tier | Folder | What | Auth | Scale |
 |---|---|---|---|---|
@@ -30,79 +29,58 @@ or "open real positions."
 | **3 — real money** | `scripts/order-placement/` | Places + cancels a real (never-filling) resting order | JWT, refreshed | smoke/load/stress, **capped at provisioned account count** |
 | **4 — real fills** | `scripts/order-matching/` | Maker+taker pair actually crosses and fills, then flattens both sides | JWT, refreshed (×2 per pair) | **smoke only, on purpose** — see below |
 
-**Start at Tier 1, always.** It needs no provisioning, touches no state, and is the cheapest
-possible confirmation the target and script are both alive — the same role
-`test-types/smoke-test.js` plays in the practice repo.
+**Start at Tier 1, always** — no provisioning, touches no state, cheapest possible
+confirmation the target and script are both alive.
 
-**Tier 4 is a different risk category from Tier 3, not just a bigger version of it.** Tier 3's
+**Tier 4 is a different risk category from Tier 3, not just a bigger version of it.** Tier 3
 orders are designed to never fill (10% off-mark) — zero position/PnL exposure at any scale.
-Tier 4 orders are designed **to** fill — that's the point, it's testing the match path itself —
-which means real position/PnL exposure exists for the (brief, immediately-flattened) window
-between fill and flatten. It starts smoke-only (1 VU, 3 iterations) deliberately: this is new
-maker/taker-pairing + fill-confirm + flatten coordination logic that hasn't been proven at any
-scale yet, unlike Tier 3's placement/cancel which was already a known-good pattern from the
-pytest suites before this script existed.
+Tier 4 orders are designed **to** fill (that's the point — testing the match path itself), so
+real position/PnL exposure exists for the brief window between fill and flatten. Smoke-only (1
+VU, 3 iterations) on purpose: new maker/taker-pairing + fill-confirm + flatten coordination
+logic, unproven at scale — unlike Tier 3's placement/cancel, a known-good pattern already
+proven in the pytest suites.
 
-## Why Tiers 2/3 need their own account provisioning
+## Account provisioning (Tiers 2–4)
 
-k6's embedded JS runtime has no secp256k1/keccak library, so it can't mint a session itself —
-this app's auth needs a real wallet signature (`eth_account`, same as
-`tools/arrange_metamask_e2e.py`). Minting stays a Python-side job:
-
-```bash
-python3 tools/arrange_perf_accounts.py                        # 5 subject accounts (default), no pairs
-python3 tools/arrange_perf_accounts.py --count 20              # match your target VU count (Tier 2/3)
-python3 tools/arrange_perf_accounts.py --count 0 --pairs 1      # 1 maker+taker pair, no subjects (Tier 4)
+```
+tools/arrange_perf_accounts.py (Python — k6 has no secp256k1/keccak, can't sign itself)
+        │  mints wallets, signs with eth_account (same as tools/arrange_metamask_e2e.py)
+        v
+perf/data/accounts.json   (git-ignored — live JWTs, 60s access-token TTL)
+        │
+        v
+k6 run  ──►  lib/auth.js: POST /auth/refresh (refresh_token, no signing needed)
+        ──►  lib/accounts.js: accounts[(__VU - 1) % accounts.length] — one dedicated account per VU
 ```
 
-This writes `perf/data/accounts.json` (git-ignored — it holds live JWTs). k6 only ever calls
-`POST /auth/refresh` with an already-valid `refresh_token` from there on (`lib/auth.js`) — pure
-JSON, no signing needed. Tier 4's maker+taker pairs are separate accounts from Tier 2/3's
-`--count` subjects — provision only what the tier you're about to run actually needs.
+```bash
+python3 tools/arrange_perf_accounts.py                     # 5 subject accounts (default), no pairs
+python3 tools/arrange_perf_accounts.py --count 20           # match target VU count (Tier 2/3)
+python3 tools/arrange_perf_accounts.py --count 0 --pairs 1   # 1 maker+taker pair, no subjects (Tier 4)
+```
 
-**Two things that make this different from a normal login-pool pattern:**
-- **Access tokens expire in 60s.** `perf/data/accounts.json` goes stale in about a minute —
-  run the arrange script *immediately* before every Tier 2/3 k6 run, never reuse a copy from an
-  earlier session (same rule as `e2e/.arrangement.json`).
-- **refresh_token is single-use and rotates.** `lib/accounts.js` assigns exactly one dedicated
-  account per VU (`accounts[(__VU - 1) % accounts.length]`) — never shared. If your VU count
-  exceeds the provisioned account count, two VUs will eventually share an account and race on
-  rotating its refresh_token, breaking one of them with a confusing 401. **Always provision at
-  least as many accounts as your peak VU target.**
+Tier 4's maker+taker pairs are separate from Tier 2/3's `--count` subjects — provision only what
+the tier you're about to run needs. Two things that make this different from a normal
+login-pool pattern:
+- **60s access-token TTL** — `accounts.json` goes stale in ~1 minute. Run the arrange script
+  *immediately* before every Tier 2/3 run, never reuse an older copy (same rule as
+  `e2e/.arrangement.json`).
+- **`refresh_token` is single-use and rotates**, one account per VU, never shared. VU count over
+  the provisioned account count → two VUs share an account, race on rotation, one gets a
+  confusing 401. **Always provision ≥ peak VU target.**
 
 ## Safety rails
 
-- **Tier 1 by default.** Only reach for Tier 2/3 deliberately.
-- **Tier 2 VU count ≤ provisioned account count.** See above.
-- **Tier 3's real-money risk is capped by design, not by scale.** Every order rests 10% off-mark
-  and never fills (mirrors `test_orders.py`) — no position/PnL risk at any VU count. The one
-  thing that scales with load is a resting order getting orphaned on the shared book if its own
-  cancel fails; `lib/orders.js` retries cancellation (idempotent, unlike placement — see its own
-  comment) specifically to keep that safe under `load.js`/`stress.js`. It targets
-  `LINKUSDT-PERP` (idle, confirmed live-tradeable this session — see `CONVENTIONS.md`'s UAT
-  market allocation), never the shared default `BTCUSDT-PERP`/`ETHUSDT` or the liquidation
-  tests' `SUIUSDT-PERP`/`DOGEUSDT-PERP`.
-- **Tier 4's risk is real but bounded and short-lived, not eliminated.** A fill means real
-  position/PnL exposure exists for both sides — `scripts/order-matching/smoke.js` confirms the
-  fill, then immediately flattens both sides with a reduce-only order that retries (idempotent,
-  same reasoning as Tier 3's cancel — see `lib/orders.js`'s `closePositionWithRetry`). Notional
-  per fill is deliberately tiny (`NOTIONAL_USD = 500`) to minimize price impact on a thin market.
-  It targets `BNBUSDT-PERP` — separate from Tier 3's `LINKUSDT-PERP` on purpose, since real fills
-  move price on a thin market and Tier 3's never-filling orders don't; the two tiers should never
-  share a market. **Smoke-only for now** — no `load.js`/`stress.js` exists for Tier 4 yet, by
-  explicit choice, until the maker/taker-pairing + fill-confirm + flatten coordination has been
-  proven at 1 VU first.
-- **No `soak.js` for any tier, yet.** Long-duration leak-hunting is a real gap in this suite
-  right now — see `METRICS_AND_MONITORING.md` §3.
-- **Check `gh run list --status in_progress --status queued` before any run.** This hits the
-  same shared UAT environment as the pytest `@trades`/`@serial` lanes and `e2e/` — concurrent
-  live traffic against a thin shared market corrupts both runs, exactly like the CI-vs-CI
-  collisions documented in `CONVENTIONS.md`.
-- **No retries anywhere.** k6 doesn't retry by default — don't add any. Same reasoning as
-  `CONVENTIONS.md` §8: a retried order is a doubled order.
-- **Right now, during the confirmed UAT infrastructure outage: don't execute anything against
-  live UAT yet — not even Tier 1 reads.** This suite exists to be ready the moment the outage is
-  confirmed resolved, not to add load to a system already being fixed.
+| Rail | Detail |
+|---|---|
+| Tier 1 by default | reach for Tier 2/3 only deliberately |
+| Tier 2 VU count ≤ provisioned account count | see provisioning above |
+| Tier 3 risk capped by design, not scale | orders rest 10% off-mark, never fill (mirrors `test_orders.py`) — zero position/PnL risk at any VU count. Only scaling risk: an orphaned resting order if its own cancel fails — `lib/orders.js` retries cancellation (idempotent, unlike placement). Targets `LINKUSDT-PERP` (idle, confirmed live-tradeable — see `CONVENTIONS.md`'s market allocation), never `BTCUSDT-PERP`/`ETHUSDT` or the liquidation tests' `SUIUSDT-PERP`/`DOGEUSDT-PERP` |
+| Tier 4 risk real but bounded + short-lived | a fill means real position/PnL exposure for both sides — `order-matching/smoke.js` confirms the fill then immediately flattens both (reduce-only, retried — `lib/orders.js`'s `closePositionWithRetry`). Notional per fill deliberately tiny (`NOTIONAL_USD = 500`). Targets `BNBUSDT-PERP`, separate from Tier 3's `LINKUSDT-PERP` on purpose (real fills move price on a thin market, Tier 3's never-filling orders don't — tiers must never share a market). **Smoke-only for now**, until the pairing/fill-confirm/flatten coordination is proven at 1 VU |
+| No `soak.js` for any tier yet | leak-hunting gap — see `METRICS_AND_MONITORING.md` §3 |
+| Check `gh run list --status in_progress --status queued` before any run | same shared UAT env as pytest `@trades`/`@serial` and `e2e/` — concurrent traffic on a thin market corrupts both runs (same CI-vs-CI collision class as `CONVENTIONS.md`) |
+| No retries anywhere | k6 doesn't retry by default — don't add any, same reasoning as `CONVENTIONS.md` §8 (a retried order is a doubled order) |
+| During a confirmed UAT infrastructure outage | don't run anything against live UAT, not even Tier 1 reads — this suite should be ready the moment an outage is resolved, not adding load to a system being fixed |
 
 ## Running
 
@@ -152,28 +130,21 @@ export $(grep -v '^#' .env | xargs)
 
 ## What you get after every run, automatically
 
-`perf/run.sh` always captures raw request-level output (`--out json=...` to
-`perf/results/<script>-<timestamp>.ndjson`, git-ignored, kept for later re-analysis) and runs
-two reports against it after k6 finishes — on top of k6's own terminal summary (per-check
-pass/fail %, `http_req_duration` percentiles, `http_req_failed` rate, and a non-zero exit code
-if any `thresholds` fail — that exit code is the real "alert," `echo $?` after any run):
+`perf/run.sh` captures raw request output (`--out json=...` → `perf/results/<script>-<timestamp>.ndjson`,
+git-ignored) and runs two reports on top of k6's own terminal summary (per-check pass/fail %,
+`http_req_duration` percentiles, `http_req_failed` rate, non-zero exit on any failed
+`thresholds` — `echo $?` is the real alert):
 
-- **`tools/status_code_breakdown.sh`** — every distinct HTTP status code actually seen, not
-  just 200-vs-not. k6 only keeps a per-tag breakdown for values a threshold references, so a
-  stray 400/429/503 silently never appears in the plain summary otherwise.
-- **`tools/time_trend_report.py`** — first-half vs second-half comparison of the run: is p95
-  creeping up, is the fail rate rising later on. The question a `stress`/`load` run exists to
-  answer, which one averaged summary line hides by design. Flags itself as low-confidence on
-  small (smoke-scale) samples rather than pretending to a trend that isn't really there.
+| Tool | Gives you |
+|---|---|
+| `tools/status_code_breakdown.sh` | every distinct HTTP status code seen — k6's own summary only breaks out values a threshold references, so a stray 400/429/503 otherwise stays invisible |
+| `tools/time_trend_report.py` | first-half vs second-half comparison (p95 creeping up? fail rate rising?) — the question `stress`/`load` exists to answer, hidden by one averaged summary line. Flags itself low-confidence on smoke-scale samples |
 
-Both are adapted from the practice repo's `scripts/analyze-time-trend.sh` /
-`scripts/count-status-codes.sh` — same logic, wired to run automatically instead of needing a
-separate manual invocation.
+Both adapted from the practice repo's `scripts/analyze-time-trend.sh` /
+`scripts/count-status-codes.sh`, wired to run automatically instead of needing a separate call.
 
-**See `METRICS_AND_MONITORING.md`** for the full picture: every metric in the table above
-explained, plus what to watch server-side (CPU, RAM/leaks, connection pools — no GPU, this
-stack doesn't have one) if you have any visibility into the backend under test, and which tier
-is good at surfacing which failure mode.
+**See `METRICS_AND_MONITORING.md`** for the full picture: every metric explained, what to watch
+server-side if you have backend visibility, and which tier surfaces which failure mode.
 
 ## Visualizing results
 

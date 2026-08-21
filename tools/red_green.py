@@ -27,9 +27,7 @@ def parse_args(argv: list[str]) -> tuple[str, str | None, str, bool]:
     return file, grep, env, "--force" in argv
 
 
-# mutate literal expected values on the RIGHT of comparisons in assert lines:
-#   == True/False/number/'str'   >= number   <= number   > number   < number
-# and inside pytest.approx(<number>. leaves dynamic/expression args untouched.
+# mutate literal expected values RIGHT of comparisons in assert lines (==/>=/<=/>/< true/false/number/'str') and inside pytest.approx(<number>) -- dynamic/expression args untouched.
 CMP = re.compile(r"(==|>=|<=|>|<)\s*(True|False|-?\d+(?:\.\d+)?|'[^']*'|\"[^\"]*\")")
 APPROX = re.compile(r"(pytest\.approx\(\s*)(-?\d+(?:\.\d+)?)")
 

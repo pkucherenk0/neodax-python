@@ -43,19 +43,15 @@ def _cancel_leftovers(account):
 @pytest.mark.timeout(300)  # first use of account do faucet + transfer + enroll
 class TestPerpOrders:
     def test_resting_limit_order_appears_in_open_orders_and_can_be_cancelled(self, account):
-        # arrange — resolve market, price a buy 5% below mark (rests as bid, well below
-        # touch so never fills, still inside price band unlike an extreme price engine reject).
+        # arrange — resolve market, price a buy 5% below mark (rests, never fills, inside price band).
         mkt = resolve_perp_market(account.trading_client, perp_market)
         mark = get_perp_mark_price(account.trading_client, mkt.market)
         assert mark > 0, "perp mark price available"
         amount = size_amount(perp_trade.order_notional_usd, mark, mkt)
         rest_price = round_tick(mark * 0.95, mkt.tick_size, mkt.price_precision)
-        # ground truth: limit order locks qty x price / leverage exactly. no slippage buffer
-        # (market-only), no fee (checked, not locked). src: converters.go CalculateInitialMargin
-        # ~L218-249, lock_oneway.go/lock_hedge.go, TestLockPerpAsset_LockMarginOnly_NotMarginPlusFee.
+        # ground truth: locks qty x price / leverage exactly, no buffer/fee -- see docs/test-cases/perps.md.
         reserved_margin = (float(amount) * float(rest_price)) / LEVERAGE
-        # `account` fixture only confirms perp settled >=90% of funding.perp_usdt, not exact.
-        # settle "before" to fixture's known baseline first (same race as spot/test_orders.py).
+        # settle "before" to fixture's known baseline first -- see docs/test-cases/perps.md.
         expected_baseline = float(funding.perp_usdt)
         before = poll_until(
             lambda: get_perp_balance_snapshot(account.trading_client, account.app_session_id),
@@ -77,8 +73,7 @@ class TestPerpOrders:
         mine = next(o for o in get_perp_open_orders(account.trading_client, account.app_session_id, mkt.market)
                     if o.order_id == order_uuid)
         record("resting order", mine.model_dump())
-        # the lock can trail the order becoming visible in open_orders by a beat -> poll for
-        # the exact expected lock (proven BE formula above), not a single read.
+        # lock can trail open_orders visibility by a beat -- poll for the exact expected lock.
         poll_until(
             lambda: get_perp_balance_snapshot(account.trading_client, account.app_session_id).available,
             lambda avail: abs(avail - (before.available - reserved_margin)) < 1e-6, timeout_s=15,
@@ -88,8 +83,7 @@ class TestPerpOrders:
         in_history = any(o.order_id == order_uuid
                          for o in get_perp_orders(account.trading_client, account.app_session_id, mkt.market))
 
-        # resting unfilled gtc limit sit in "wait" state, accept "open" too. real proof of
-        # resting is fill_amount == 0.
+        # resting unfilled gtc limit sits in "wait" state, accept "open" too -- real proof of resting is fill_amount == 0.
         record_check(
             name="resting limit present in open_orders with expected shape",
             passed=mine.type == "limit" and mine.side == "buy" and mine.state in RESTING_STATES
@@ -112,8 +106,7 @@ class TestPerpOrders:
             lambda: any(o.order_id == order_uuid for o in get_perp_open_orders(account.trading_client, account.app_session_id, mkt.market)),
             lambda seen: not seen, timeout_s=15, message="cancelled order left open_orders",
         )
-        # release target `before` valid since lock was proven exact above; real eventual-consistency
-        # lag (generous timeout). capture poll_until's own value, not a fresh re-read (different replica risk).
+        # capture poll_until's own value, not a fresh re-read (different replica risk).
         after_available = poll_until(
             lambda: get_perp_balance_snapshot(account.trading_client, account.app_session_id).available,
             lambda avail: abs(avail - before.available) < 1e-6, timeout_s=30,
@@ -126,8 +119,7 @@ class TestPerpOrders:
                      passed=abs(after_available - before.available) < 1e-6,
                      detail={"before": before.available, "after": after_available})
 
-        # assert — resting shape was correct, lock/release both match the order's own known
-        # margin (independent oracle: the BE's own margin formula, not a guessed value).
+        # assert — resting shape correct, lock/release match the order's own margin (independent oracle, see docs/test-cases/perps.md).
         assert mine.type == "limit", "order is a limit"
         assert mine.state in RESTING_STATES, "order is in a resting state"
         assert float(mine.fill_amount or "0") == 0, "resting order is unfilled"

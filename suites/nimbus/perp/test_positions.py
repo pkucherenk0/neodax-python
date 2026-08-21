@@ -89,11 +89,7 @@ class TestPerpPositionLifecycle:
         long_after = long_size(positions)
         long_row = next((p for p in positions if p.direction == "long"), None)
         record("open position", long_row.model_dump() if long_row else {"note": "no discrete long row", "longAfter": long_after})
-        # margin ledger settles async, separately from position size -- wait for it instead of
-        # reading it once right after the position-size poll above. gate on ALLOCATED, not
-        # available: available also reflects any instant PnL from crossing the spread at fill,
-        # which is a real (if usually small) confound on a live market -- allocated margin
-        # rising is the actual invariant "the order locked margin" means.
+        # margin settles async, gate on allocated not available (PnL confound) -- see docs/test-cases/perps.md.
         poll_until(
             lambda: get_perp_balance_snapshot(account.trading_client, account.app_session_id).allocated,
             lambda alloc: alloc > before.allocated, timeout_s=10, message="allocated margin locked",
@@ -155,13 +151,7 @@ class TestPerpPositionLifecycle:
             lambda size: size < long_before - amt * 0.5, timeout_s=20, message="long exposure dropped",
         )
         long_after = long_size(get_perp_positions(account.trading_client, account.app_session_id, mkt.market))
-        # margin ledger settles async, separately from position size -- poll it instead of one
-        # unguarded read (see the matching poll in test_1). gate on ALLOCATED, not available:
-        # `available` bundles margin release together with whatever realized PnL the close
-        # produced, and this market can move a real amount between open and close on a live
-        # env (confirmed: BTCUSDT-PERP moved ~10% within one run, same market trades-lane
-        # trades concurrently -- see git history). allocated margin releasing is the actual
-        # invariant this test proves; available rising is not guaranteed on a real fill.
+        # margin settles async, gate on allocated not available (PnL confound, same as test_1) -- see docs/test-cases/perps.md.
         poll_until(
             lambda: get_perp_balance_snapshot(account.trading_client, account.app_session_id).allocated,
             lambda alloc: alloc < before.allocated, timeout_s=10, message="allocated margin released",

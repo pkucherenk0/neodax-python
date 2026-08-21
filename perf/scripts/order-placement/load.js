@@ -1,8 +1,5 @@
-// TIER 3 -- REAL MONEY. Same never-filling resting-order pattern as smoke.js (see
-// ../../lib/orders.js), run at realistic concurrent order-placement load.
-// VU count MUST NOT exceed the provisioned account count (see ../../README.md) -- provision
-// at least as many accounts as `target` below (60s token TTL -- do this immediately before
-// running):
+// TIER 3 -- REAL MONEY. Same never-filling resting-order pattern as smoke.js, at realistic concurrent load. VU count MUST NOT exceed provisioned accounts (see ../../README.md).
+// Provision at least as many accounts as `target` below (60s token TTL -- do this immediately before running):
 //   python3 tools/arrange_perf_accounts.py --count 5
 // Run: k6 run perf/scripts/order-placement/load.js
 import { sleep } from 'k6';

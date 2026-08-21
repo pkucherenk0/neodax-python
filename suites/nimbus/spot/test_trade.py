@@ -25,10 +25,7 @@ from lib.spot import (
 @pytest.mark.timeout(300)  # first `account` use -> faucet + transfer + enroll
 class TestSpotTrade:
     def test_market_buy_fills_against_seeded_maker_and_moves_both_balances(self, account, spot_maker):
-        # arrange — snapshot balances, seed maker liquidity: rests SELL one tick inside
-        # spread -> guaranteed counterparty (best ask). book can be completely empty on a
-        # quiet UAT market -> fall back to the corresponding perp market's oracle-fed mark
-        # price, so this resting order becomes the first price point.
+        # arrange — snapshot balances, seed maker liquidity (rests SELL one tick inside spread) -- see docs/test-cases/spot.md.
         base = re.sub(r"USDT$", "", spot_market)  # ETHUSDT -> ETH
         amount = "10.0000"
         usdt_before = get_spot_balance_snapshot(account.trading_client, account.app_session_id, "USDT")

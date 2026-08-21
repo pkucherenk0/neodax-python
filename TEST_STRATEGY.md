@@ -37,11 +37,9 @@ is not.
 
 ## 2. FE-integrated E2E — the cheap, correct shape
 
-**Do not re-test fee math through the browser.** Driving 287k of volume or a 24h-NIM average by
-clicking is slow and flaky, and it duplicates what the API layer already proves.
-
-Instead, **reuse this repo's `fixtures/` + `lib/` as the *arrange* engine, drive the browser only for
-the last-mile assertion:**
+**Do not re-test fee math through the browser** — driving volume/NIM by clicking is slow,
+flaky, and duplicates what the API layer already proves. Instead, reuse this repo's
+`fixtures/` + `lib/` as the *arrange* engine, drive the browser only for the last-mile assert:
 
 ```
 API-arrange (existing helpers):  enroll + faucet + transfer + driveCompetitionVolume → VIP1
@@ -51,56 +49,45 @@ Browser (Playwright):            log in, open the fees/competition page
 Assert:                          the UI renders the discounted 8bps / VIP1 tier
 ```
 
-Playwright does both `APIRequestContext` and browser in one project, so this is additive — new
-browser projects alongside the existing `uat`/`stage` API projects, sharing the same fixtures.
-
-Keep the browser set **small and journey-focused** (enroll, see discount, place order, see charged
-fee). Everything combinatorial stays in the API layer.
+Playwright does both `APIRequestContext` and browser in one project — additive, new browser
+projects alongside the existing `uat`/`stage` API projects, sharing fixtures. Keep the browser
+set small and journey-focused (enroll, see discount, place order, see charged fee); everything
+combinatorial stays in the API layer.
 
 ### Auth is the real hurdle (web-hub uses wallet-connect)
-The API harness signs challenges directly with `ethers`. A browser can't click through a wallet
-extension easily. Two options, in order of preference:
+The API harness signs challenges directly; a browser can't click through a wallet extension
+easily. Two options:
 
-1. **Seed the session via the API, inject it into the browser** — reuse the existing auth fixture to
-   get the `access_token`, then set it in the browser context (localStorage/cookie) so the app loads
-   authenticated. Skips the wallet UI; tests everything *behind* login. Pragmatic and fast.
-2. **Injected test provider** — expose a synthetic `window.ethereum` backed by a known test key
-   (custom provider or a tool like Synpress) to exercise the *real* connect flow.
-
-Use (1) for the bulk of journeys; add **one** (2)-style test that covers the wallet-connect flow
-itself, so login isn't a coverage hole.
-
-> Trade-off of (1): you skip testing the login UI on most tests — accepted, because the one connect
-> test covers it and the value is in the post-auth journeys.
+| Option | How | Trade-off |
+|---|---|---|
+| 1. Seed session via API, inject into browser (used for most journeys) | reuse the auth fixture's `access_token`, set it in browser context (localStorage/cookie) | skips login UI — accepted, since the one connect test below covers it |
+| 2. Injected test provider (one connect test only) | synthetic `window.ethereum` backed by a test key, exercises the real connect flow | slower, only needed to keep login itself from being a coverage hole |
 
 ---
 
 ## 3. Cross-repo CI wiring (the multi-repo crux)
 
-This repo can't be triggered by BE/FE **code** alone — it tests **deployments**. Wire it on deploy
-events and schedules, not on push:
+This repo can't be triggered by BE/FE **code** alone — it tests **deployments**. Wire it on
+deploy events and schedules, not on push:
 
-1. **Post-deploy trigger (primary).** When BE or FE finishes deploying to uat/stage, the deploy
-   workflow fires a GitHub `repository_dispatch` (or `workflow_dispatch`) into this repo's Actions,
-   passing the target env. 
-   - BE deploy → run the **API/contract** suite (+ the FE-integrated smoke).
-   - FE deploy → run the **FE-integrated** suite (+ a fast API smoke).
-2. **Report back.** This repo posts a **commit status / check** back to the triggering repo via the
-   GitHub API (or a Slack/dashboard notice), so a bad deploy is visible where the change was made.
-3. **Nightly scheduled** full run against uat (and stage) — catches drift and flake.
+1. **Post-deploy trigger (primary).** BE/FE deploy workflow fires `repository_dispatch` (or
+   `workflow_dispatch`) into this repo's Actions with the target env. BE deploy → API/contract
+   suite + FE-integrated smoke. FE deploy → FE-integrated suite + fast API smoke.
+2. **Report back** — commit status/check to the triggering repo (GitHub API or Slack/dashboard),
+   so a bad deploy is visible where the change was made.
+3. **Nightly** full run against uat (+ stage) — catches drift and flake.
 4. **Manual dispatch** for release gating before promoting an env.
 
 ### Guard the contract *between* the repos (so you're not relying on slow E2E)
-Separate repos drift silently. Add a fast, cheap contract guard so a BE change that breaks the FE↔API
-shape fails *before* the full E2E:
+Separate repos drift silently — add a fast, cheap contract guard so a BE shape change fails
+before the full E2E:
+- **OpenAPI as source of truth** — BE publishes it, this repo's `lib/schemas.py` (pydantic) and
+  the FE's client validate against it. A schema change becomes a visible diff/PR.
+- **Or consumer-driven contract tests (Pact)** — FE (consumer) publishes expectations, BE
+  (provider) verifies in its own CI. Heavier, decouples the repos properly.
 
-- **Single source of truth for the API schema** (OpenAPI): BE publishes it; this repo's `lib/schemas.py`
-  (pydantic) and the FE's client validate against it. A schema change becomes a visible diff/PR.
-- Or **consumer-driven contract tests** (Pact): the FE (consumer) publishes expectations, the BE
-  (provider) verifies them in its own CI. Heavier, but decouples the repos properly.
-
-Minimum viable version: keep the pydantic schemas in this repo as the shared contract, and treat a
-schema validation failure in the E2E run as "contract drift" (they already do — `parsed_json` fails loudly).
+Minimum viable: pydantic schemas here ARE the shared contract already — a schema-validation
+failure in the E2E run already reads as "contract drift" (`parsed_json` fails loudly).
 
 ---
 
@@ -127,37 +114,35 @@ nightly), not on every push.
 
 Two inventories, each **anchored to a source of truth** (never hand-maintained lists — those rot):
 
-**API map — DONE.** `configs/api-endpoints.json` is the registry of BE routes in scope for this
-harness (the competition fee-engine + the trading/auth/faucet flows that feed it), extracted from the
-BE repos (`nimbus`, `web-hub` — both Gin; see `generatedFrom` + `excludedAreas`). `python
-tools/api_coverage.py` cross-references it against the endpoints the tests actually call (scanned
-from `lib/`/`fixtures/`/`suites/`) and prints per-service coverage + two drift signals:
-- registry endpoints with no test → **coverage gaps** (what to test next),
-- paths referenced in tests but not in the registry → **stale map / typo** (regenerate).
+**API map — DONE.** `configs/api-endpoints.json` is the registry of BE routes in scope
+(competition fee-engine + the trading/auth/faucet flows feeding it), extracted from the BE
+repos (`nimbus`, `web-hub` — both Gin; see `generatedFrom` + `excludedAreas`).
+`python tools/api_coverage.py` cross-references it against endpoints the tests actually call
+(scanned from `lib/`/`fixtures/`/`suites/`), prints per-service coverage + two drift signals:
+registry endpoints with no test (**coverage gap**), and paths referenced in tests but not in the
+registry (**stale map / typo**).
 
-Baseline: **18/47 (38%)** — full on the flows we exercise, with clear gaps (order cancellation,
-positions read, leverage, rankings, `/me`, broadcast, internal fee-overlay). **Anti-drift:**
-regenerate the registry when the BE route files change (the `generatedFrom` pointers say where); the
-runtime `pydantic` schemas (`lib/schemas.py`) already guard request/response *shape*, so the map only
-has to track the *surface*, not the payloads.
+Baseline: **18/47 (38%)** — full on the flows exercised, gaps in order cancellation, positions
+read, leverage, rankings, `/me`, broadcast, internal fee-overlay. Anti-drift: regenerate the
+registry when BE route files change (`generatedFrom` pointers say where); `lib/schemas.py`
+already guards request/response *shape*, so the map only tracks *surface*, not payloads.
 
-**FE map — SUPERSEDED by a real UI e2e suite.** The original plan here was a Page Object Model
-driven via session injection + a testid-contract audit — retired. It turned out the FE's
-wallet-connect gate (Reown AppKit + wagmi) can't be satisfied by session injection alone: the
-Open Long/Short buttons stay `disabled` and the Open Orders/Positions panels show "Connect Wallet
-to Start" without a *real* wallet connection, even though the underlying API calls succeed in the
-background. `e2e/` is now a separate Node/Playwright project driving a real MetaMask instance
-(dappwright) through the actual FE — see `e2e/lib/metamask.ts` for the connect-flow mechanics and
-`e2e/lib/actions.ts` for the named, reusable UI actions.
+**FE map — SUPERSEDED by a real UI e2e suite.** Original plan (POM via session injection +
+testid-contract audit) retired: the FE's wallet-connect gate (Reown AppKit + wagmi) can't be
+satisfied by session injection alone — Open Long/Short stays `disabled`, Open Orders/Positions
+show "Connect Wallet to Start", even though the underlying API calls succeed in the background.
+`e2e/` is now a pytest + Playwright project driving a mock EIP-1193 wallet through the actual
+FE — see `e2e/lib/wallet.py` for the connect-flow mechanics and `e2e/pages/` for the reusable
+page objects.
 
 ## 5. Recommended next steps
 
 1. **Adopt this repo now** as the API/contract E2E layer against uat/stage — it's ready.
-2. **Add contract guarding**: point `lib/schemas.ts` at (or generate from) the BE's OpenAPI so drift
-   is caught cheaply, not only via slow E2E.
+2. **Add contract guarding**: point `lib/schemas.py` at (or generate from) the BE's OpenAPI so
+   drift is caught cheaply, not only via slow E2E.
 3. ~~Add a `browser` project here with 3–5 FE-integrated journeys~~ — **DONE**, see `e2e/`
-   (real MetaMask, not session injection — that path turned out to be a dead end, see 4b above).
+   (mock EIP-1193 wallet, not session injection — that path was a dead end, see 4b above).
 4. **Wire post-deploy dispatch** from both BE and FE deploy workflows into this repo, reporting a
    status check back.
-5. Keep the split honest: fee-engine invariants stay in the API layer; the browser layer only asserts
-   the UI reflects them.
+5. Keep the split honest: fee-engine invariants stay in the API layer; the browser layer only
+   asserts the UI reflects them.

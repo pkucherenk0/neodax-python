@@ -1,9 +1,4 @@
-// Place-and-cancel a never-filling resting order (10% below mark) -- shared by every
-// order-placement/*.js script. Cancel retries a bounded few times: unlike order PLACEMENT
-// (CONVENTIONS.md #8 -- a retry there re-places a live order, doubling volume), cancellation is
-// idempotent -- a second cancel on an already-cancelled order is a safe no-op -- so retrying a
-// transient cancel failure is the right way to avoid leaving a real resting order on the shared
-// live book, not a violation of the no-retry rule.
+// Place-and-cancel a never-filling resting order (10% below mark), shared by order-placement/*.js. Cancel retries a bounded few times -- idempotent, unlike placement (see ../README.md).
 import http from 'k6/http';
 import { check, group, sleep } from 'k6';
 
@@ -53,11 +48,7 @@ export function placeAndCancelRestingOrder(envCfg, market, account, headers) {
   });
 }
 
-// Closes (reduce-only market order) a real position with the same bounded retry, for the same
-// reason: closing an already-flat position is a safe no-op, unlike opening one, so retrying a
-// transient failure here is the right way to avoid leaving real exposure open -- not a
-// violation of the no-retries rail (CONVENTIONS.md #8 is about OPENING a position/order).
-// Used by scripts/order-matching/ once a fill is confirmed.
+// Closes a real position (reduce-only market order) with the same bounded retry -- closing an already-flat position is a safe no-op. Used by scripts/order-matching/ once a fill is confirmed.
 export function closePositionWithRetry(envCfg, market, account, side, direction, amount, headers) {
   let res;
   for (let attempt = 0; attempt < 3; attempt++) {
