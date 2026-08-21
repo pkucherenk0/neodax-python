@@ -55,7 +55,10 @@ async (request) => {
 
 def main() -> None:
     Account.enable_unaudited_hdwallet_features()
-    account, mnemonic = Account.create_with_mnemonic()
+    account, _mnemonic = Account.create_with_mnemonic()  # mnemonic unused here (only account.key
+    # signs) -- create_with_mnemonic kept anyway for fidelity to the real subject auth path in
+    # lib/wallet.py. never printed: same throwaway secret, same accepted exception as elsewhere
+    # in this repo, but only in a git-ignored artifacts file, not stdout/CI logs.
     print(f"minted throwaway wallet: {account.address}")
 
     def eip1193_request(request: dict):
