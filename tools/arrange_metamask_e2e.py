@@ -53,8 +53,9 @@ DEFAULT_OUT = Path(__file__).resolve().parent.parent / "e2e" / ".arrangement.jso
 PATIENT_RETRIES = 6
 
 
-def _sig_hex(sig: bytes) -> str:
-    h = sig.hex()
+def _hex(b: bytes) -> str:
+    """bytes -> 0x-prefixed hex. used for both signatures and the maker's raw private key."""
+    h = b.hex()
     return h if h.startswith("0x") else "0x" + h
 
 
@@ -67,7 +68,7 @@ def _mint_and_auth(auth_ctx, wallet) -> tuple[str, str]:
     challenge = ch.json()["challenge"]
     signed = Account.sign_message(encode_defunct(text=challenge), private_key=wallet.key)
     v = auth_ctx.post("/auth/verify", data={
-        "wallet_address": address, "challenge": challenge, "signature": _sig_hex(signed.signature),
+        "wallet_address": address, "challenge": challenge, "signature": _hex(signed.signature),
     })
     assert v.ok, f"auth verify failed: HTTP {v.status} {v.text()}"
     return address, v.json()["access_token"]
@@ -121,7 +122,11 @@ def main() -> None:
         "env": {"trading_base": cfg.trading_base, "auth_base": cfg.auth_base},
         "market": perp_market,
         "subject": {"address": subject_address, "mnemonic": subject_mnemonic},
-        "maker": {"address": maker_address, "access_token": maker_token},
+        # private_key too, not just access_token: the token's 60s TTL is very likely expired by
+        # the time e2e_py's own cleanup runs (the UI flow alone can exceed that), and no
+        # refresh_token is captured here either -- re-deriving a fresh token from the key is
+        # the only reliable way for e2e_py to flatten maker's position at teardown.
+        "maker": {"address": maker_address, "access_token": maker_token, "private_key": _hex(maker_wallet.key)},
     }, indent=2))
     print(f"wrote {out}")
 

@@ -5,7 +5,7 @@ import pytest
 from playwright.sync_api import Page, Playwright, expect
 
 from components.modals import WelcomeModal, WhatsNewModal
-from lib.api import fetch_live_mark_price, match_resting_order_with_api_counterparty
+from lib.api import fetch_live_mark_price, flatten_subject_and_maker, match_resting_order_with_api_counterparty
 from lib.arrangement import Arrangement
 from lib.screenshots import take_screenshot
 from pages.assets_page import AssetsPage
@@ -54,3 +54,7 @@ def test_spot_to_perp_transfer_ui_limit_order_matched_by_api_counterparty_positi
         expect(positions.wait_until_visible(market_base)).to_be_visible()
     finally:
         open_orders.cancel_any_open_order()
+        # flatten BOTH sides by crossing them against each other -- a plain reduce-only close
+        # alone can't find a counterparty on this thin market (confirmed live). see
+        # flatten_subject_and_maker's own docstring.
+        flatten_subject_and_maker(playwright, arrangement)

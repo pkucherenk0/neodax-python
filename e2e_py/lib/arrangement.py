@@ -7,6 +7,9 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from eth_account import Account
+from eth_account.signers.local import LocalAccount
+
 ARRANGEMENT_PATH = Path(__file__).resolve().parent.parent / ".arrangement.json"
 
 
@@ -15,11 +18,19 @@ class Subject:
     address: str
     mnemonic: str
 
+    def to_account(self) -> LocalAccount:
+        Account.enable_unaudited_hdwallet_features()
+        return Account.from_mnemonic(self.mnemonic)
+
 
 @dataclass(frozen=True)
 class Maker:
     address: str
     access_token: str
+    private_key: str  # access_token's 60s TTL is very likely dead by cleanup time -- re-auth with this
+
+    def to_account(self) -> LocalAccount:
+        return Account.from_key(self.private_key)
 
 
 @dataclass(frozen=True)
