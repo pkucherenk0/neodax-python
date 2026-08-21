@@ -15,9 +15,13 @@ maker:   spot + perp funded, ready to rest the crossing order. The Node test pla
          live price at that moment, so the order isn't pre-placed here).
 
 run (repo root, venv active): python3 tools/arrange_metamask_e2e.py
+--out overrides the write path (default e2e/.arrangement.json) -- e2e_py/ (the Python POM port,
+in progress) passes its own path so the two suites never race each other's arrangement file
+during the coexistence period.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -37,7 +41,7 @@ from configs.competition import funding, perp_market
 from lib.env import resolve_env
 from lib.funding import faucet_deposit, get_perp_available, get_spot_available, transfer_spot_to_perp, wait_for_balance
 
-OUT = Path(__file__).resolve().parent.parent / "e2e" / ".arrangement.json"
+DEFAULT_OUT = Path(__file__).resolve().parent.parent / "e2e" / ".arrangement.json"
 
 
 def _sig_hex(sig: bytes) -> str:
@@ -61,6 +65,11 @@ def _mint_and_auth(auth_ctx, wallet) -> tuple[str, str]:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help=f"write path (default {DEFAULT_OUT})")
+    args = parser.parse_args()
+    out = args.out
+
     cfg = resolve_env("uat")
     with sync_playwright() as pw:
         auth_ctx = pw.request.new_context(base_url=cfg.auth_base)
@@ -92,14 +101,14 @@ def main() -> None:
         subject_trading.dispose()
         maker_trading.dispose()
 
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(json.dumps({
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps({
         "env": {"trading_base": cfg.trading_base, "auth_base": cfg.auth_base},
         "market": perp_market,
         "subject": {"address": subject_address, "mnemonic": subject_mnemonic},
         "maker": {"address": maker_address, "access_token": maker_token},
     }, indent=2))
-    print(f"wrote {OUT}")
+    print(f"wrote {out}")
 
 
 if __name__ == "__main__":
