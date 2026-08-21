@@ -73,7 +73,8 @@ jobs:
 
       - name: Real UI e2e (mock wallet -- spot->perp transfer, order, API counterparty match, position visible)
         working-directory: e2e_py
-        run: .venv/bin/pytest -v -m trades  # pytest.ini's addopts default-excludes trades; CI must opt back in
+        # addopts default-excludes trades; run the safe lane too or it silently never runs in CI.
+        run: .venv/bin/pytest -v && .venv/bin/pytest -v -m trades
 
       - name: Upload e2e artifacts (screenshots + failure traces)
         if: always()
