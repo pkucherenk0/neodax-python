@@ -1,4 +1,4 @@
-"""e2e_py fixtures. mints/funds fresh throwaway UAT accounts before run (via root's
+"""e2e fixtures. mints/funds fresh throwaway UAT accounts before run (via root's
 tools/arrange_metamask_e2e.py --out, root .venv -- keeps eth_account/lib/configs in one
 place). hands specs an already-wallet-connected page. mirrors old global-setup.ts + wallet.ts.
 """

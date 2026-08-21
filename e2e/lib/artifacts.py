@@ -1,7 +1,7 @@
 """save minted account creds to a git-ignored JSONL, one file per run -- so a failed run leaves
 a trace of which throwaway account was involved (for manual cleanup/debugging), same as root
 lib/artifacts.py's record_account. Self-contained (no root run_context.py machinery) since
-e2e_py stays a separate sibling project. throwaway UAT wallets only -- private key/mnemonic
+e2e stays a separate sibling project. throwaway UAT wallets only -- private key/mnemonic
 saved on purpose (same accepted exception as root's own artifacts). best-effort: never fail
 a test.
 """

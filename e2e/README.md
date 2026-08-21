@@ -1,85 +1,102 @@
-# e2e — UI tests (Playwright + a mock wallet)
+# e2e — UI tests (pytest + Playwright + a mock wallet)
 
-Separate Node/Playwright project, not pytest. Mock EIP-1193 wallet
-(`@johanneskares/wallet-mock`, real signatures, no real MetaMask extension) driving the actual
-FE — the wallet-connect gate (Reown AppKit + wagmi) can't be satisfied by session injection
-alone: order buttons stay `disabled`, Open Orders/Positions panels show "Connect Wallet to
-Start" without a genuinely connected wallet.
+Page-Object-Model port of what used to be a Node/Playwright project (same live app, same mock
+EIP-1193 wallet approach — real signatures, no MetaMask extension) — now Python + pytest,
+structured like `practice-py`'s POM layout: `pages/` (locators + actions, no `assert`/`expect`),
+`components/` (shared modals), `lib/` (wallet mock, API helpers, arrangement loader),
+`conftest.py` (fixtures), `tests/`.
 
 ```bash
-cd e2e && npm install && npx playwright install chromium && npx playwright test
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+playwright install chromium
+pytest                # safe default: connectivity check only, no real orders/transfers
+pytest -m trades      # the real flow -- places a real order, transfers real funds. deliberate.
 ```
 
-`playwright.config.ts` captures a screenshot + trace on failure only (`test-results/`), plus
-manual named checkpoints in `screenshots/` along the way (see `lib/actions.ts`).
+`pytest.ini` mirrors the old `playwright.config.ts`'s `use` block: headless chromium,
+screenshot-on-failure, trace-on-failure. Named checkpoint screenshots (`lib/screenshots.py`)
+land in `screenshots/`, same reasoning as before — automatic on-failure alone misses a failure
+inside a page-object method, not just the test itself.
+
+**Safety rail**: `trades` is opt-in, same as the main pytest suite's own markers -- the default
+`addopts` excludes it. CI explicitly passes `-m trades` (that's the whole point of running
+`e2e-ui`), so don't drop that flag from the workflow when touching it.
+
+## Why this is Python now, not Node
+
+`@johanneskares/wallet-mock`'s actual browser-side script (the npm package the old Node version
+used, `node_modules/@johanneskares/wallet-mock/dist/{installMockWallet,createWallet}.js`, read
+directly before it was removed) turned out to have **no crypto in it at all** — it's a generic EIP-6963
+"announce a fake wallet" shim that forwards every `request()` call back to the test runner over
+`page.exposeFunction()`. All the actual signing happens runner-side (Node+viem there, Python+
+`eth_account` here, already used elsewhere in this repo). That meant porting this needed no
+Node build step, no bundling, no npm dependency anywhere — see `spike_wallet_mock.py` for how
+that was proven out first, before anything else was built.
 
 ## Known issues / workarounds (debugging notes, not rules)
 
-**Real MetaMask (dappwright) was replaced with a mock wallet — history, not current design.**
-Every real dappwright failure this project hit (popup navigating in place instead of reopening,
-a popup self-closing mid-click, a connect that silently never landed, a retry that hung ~10min)
-traced back to the same thing: Playwright driving a real browser extension's popup is
-inherently racy against its own internal timing. Confirmed that's an industry-wide, still-
-unresolved pattern (`microsoft/playwright-python#1316`, `synpress-io/synpress#1308` — MetaMask
-v13 specifically), not something fixable in this repo's test code. `lib/wallet.ts` now installs
-an injected EIP-1193 provider instead — no popup exists to race against.
-
-**`wallet-mock` doesn't implement `eth_signTypedData_v4`.** Its `personal_sign` covers the
-SIWE-style connect signature (confirmed live: that popup was always a plain "Approve Signature
-Request", not a typed-data screen) and hasn't been an issue in any run so far — order placement
-goes through cleanly, so the state-channel signing step is `personal_sign` too. If a future flow
-needs typed-data signing, extend the wallet object via wallet-mock's `{ wallet }` install option
-rather than assume it's covered.
+Everything below was true of the original Node suite and stays true here — same live app, same
+FE, same bugs. A few new, Python-porting-specific ones are called out separately at the end.
 
 **The app auto-connects on its own once a wallet is discoverable — no Connect-button click
-needed.** Confirmed live: as soon as the mock wallet is installed and the page loads, the app
-completes the connect handshake by itself. `waitForWalletConnected()` in `lib/actions.ts` waits
-for the connected-state signal instead of clicking anything. Two signals are accepted, not just
-one — the top-nav "Deposit" link, or the "Welcome to Yellow Pro" modal's own "Connected as
-0x..." text, whichever renders first (confirmed live: the modal can appear and cover the
-Deposit link before it would otherwise become visible).
+needed.** `HomePage.wait_for_wallet_connected()` waits for the connected-state signal instead of
+clicking anything. Two signals are accepted — the top-nav "Deposit" link, or the "Welcome to
+Yellow Pro" modal's own "Connected as 0x..." text, whichever renders first.
 
-**"What's new" / "Welcome" modals render with a delay.** Both appear a beat after page load or
-after certain clicks (confirmed: not present immediately, ~3s later), so a one-shot "check then
-click" has a real gap where the modal renders after the check and blocks the next click.
-Playwright's own retry doesn't help — it waits for the target to become clickable, it has no
-notion of dismissing an unrelated overlay. `clickRobustToModalRace()` in `lib/actions.ts`:
-try the click with a short bounded timeout, dismiss both modals if that's what blocked it,
-retry once. This is what fixed a 10-minute CI hang (the click retried against a blocked state
-for the full test timeout).
+**"What's new" / "Welcome" modals render with a delay** (confirmed: not present immediately,
+~3s later) — a one-shot check has a real gap where the modal renders after the check and blocks
+the next click. `components/modals.py`'s `click_robust_to_modal_race()`: try the click with a
+short bounded timeout, dismiss both modals if that's what blocked it, retry once. Fixed a
+10-minute CI hang in the original.
 
 **Transfer dialog's "Transfer from" balance can be stale (known UAT FE bug).** The Transfer
-button silently stays disabled even though the account has the funds — confirmed independently
-(same balance visible via `GET /spot/account`, identical transfer succeeds instantly via
-`POST /accounts/transfer`). FE-only, not a real balance issue. Toggling the "Transfer from"
-selector away and back forces a refetch that picks up the real balance
-(`refreshTransferFromBalanceViaDirectionToggle`). Its picker is a portal — nested in the ARIA
-snapshot but not necessarily in the DOM — so it's scoped at the page level, not `dialog`.
+button silently stays disabled even though the account has the funds (confirmed independently:
+same balance visible via `GET /spot/account`, identical transfer succeeds instantly via
+`POST /accounts/transfer`). `AssetsPage._refresh_stale_from_balance()` toggles the "Transfer
+from" selector away and back to force a refetch. Its picker is a portal — scoped at the page
+level, not the dialog.
 
-**Order-form field order is unverified, not enforced.** `placeRestingPerpLimitBuy` fills
-`input[type=text]` by position (price, then size) — there's no stable selector. The FE's
-modals have reordered before this session; a silent reorder here would fill plausible-looking
-wrong values instead of failing loudly. The form's actual field set is logged + screenshotted
-every run so a bad-input symptom is diagnosable from the report, not just a rerun.
+**Order-form field order is unverified, not enforced.** `PerpOrderPage.place_resting_limit_buy`
+fills `input[type=text]` by position (price, then size) — no stable selector exists. The
+form's actual field set is logged + screenshotted every run so a bad-input symptom is
+diagnosable from the report, not just a rerun.
 
 **Position propagation trails the fill by a beat, UI may not live-refresh.**
-`assertPositionVisibleInUi` reloads on a bounded retry loop rather than a fixed sleep, driven
-by Playwright's own retrying assertion. Reload also re-triggers wagmi's wallet-auto-reconnect
-(retries ~1s up to 10x), so give re-hydration real headroom, not the 5s locator default.
+`PositionsPage.wait_until_visible()` reloads on a bounded retry loop rather than a fixed sleep.
+Reload also re-triggers wagmi's wallet-auto-reconnect (retries ~1s up to 10x), so it waits on
+the "Deposit" link with real headroom, not the locator default.
 
-**`NIMBUS_FE_BASE` can carry a stray quote/whitespace from how a CI secret was set** (e.g.
-`gh secret set --body "$url"` where `$url` still has quotes in it) — Chrome's `Page.navigate`
-rejects that outright with an opaque "invalid URL". Stripped in `tests/spot-to-perp-position.spec.ts`
-before use, with a loud diagnosis (length only, never the value itself) if it's still invalid
-after stripping.
+**`NIMBUS_FE_BASE` can carry a stray quote/whitespace** from how a CI secret was set — stripped
+in `conftest.py`'s `fe_base` fixture before use.
 
-**Faucet address casing must be EIP-55 checksummed.** Confirmed live: the faucet does not
-normalize address casing against the trading account, so a mismatch silently drops a deposit
-(reports success, credit never lands). `tools/arrange_metamask_e2e.py` forces
-`to_checksum_address()` once at the auth choke point; every downstream call reuses that string.
+**Faucet address casing must be EIP-55 checksummed** — unchanged, still enforced in
+`tools/arrange_metamask_e2e.py` (this project shells out to the root `.venv`'s copy of that
+script rather than duplicating it).
 
-**Order matching sweeps the whole live book, not a targeted counter-order.** `matchRestingOrderWithApiCounterparty`
-can't reliably target just our own order — this is a shared live book (interrupted past runs
-can leave stale resting bids we have no credentials to cancel), and the server tick-rounds
-submitted prices so filtering by our computed price is unreliable. It's a thin test market, so
-the simplest robust fix is to sweep the entire current bid book with one market sell.
+**Order matching sweeps the whole live book, not a targeted counter-order.**
+`lib/api.py`'s `match_resting_order_with_api_counterparty` can't reliably target just our own
+order — shared live book, thin market, server tick-rounds submitted prices. Sweeps the entire
+current bid book with one market sell.
+
+### New, specific to the Python port
+
+**`Locator.is_visible(timeout=...)` in Playwright Python is a one-shot snapshot check, not a
+real poll** — despite looking parallel to the JS original's `isVisible({timeout})`. Every place
+that needs "wait up to N seconds to see if this appears" uses `Locator.wait_for(state=...)`
+instead (both modals, the open-orders cancel check) — using the snapshot version would silently
+treat "not rendered yet" as "absent."
+
+**No `wait_for(state="enabled")` exists.** `PerpOrderPage`'s "form usable again" check
+(after clicking Open Long) uses `expect(locator).to_be_enabled(timeout=...)` — `expect()` used
+here purely as a bounded wait primitive, not as a test assertion (pages never grade pass/fail,
+same convention as `practice-py`).
+
+**The mock wallet needs to answer more than accounts+signing.** The first live run of the
+ported test hung 20s waiting for a connected-state signal that never arrived. Root cause: wagmi
+calls `wallet_getPermissions`/`wallet_switchEthereumChain`/`eth_chainId` during its own
+connector init, before ever calling `eth_requestAccounts` — the real npm package answers all of
+these (the last via a real viem walletClient that knows its own configured chain locally);
+`lib/wallet.py`'s `eip1193_request` now does too. `eth_signTypedData_v4` stays unimplemented on
+purpose, matching the original's own documented gap — never needed by this app's connect/order
+flows.

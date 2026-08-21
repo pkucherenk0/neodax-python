@@ -8,7 +8,7 @@ validated live: mint wallet -> install -> dapp discovers via EIP-6963 -> eth_req
 returns right address -> personal_sign returns real sig -> recover_message confirms signer.
 became lib/wallet.py once real page objects existed; kept as phase 1 record, not wired to pytest.
 
-run: python3 e2e_py/spike_wallet_mock.py
+run: python3 e2e/spike_wallet_mock.py
 """
 from eth_account import Account
 from eth_account.messages import encode_defunct

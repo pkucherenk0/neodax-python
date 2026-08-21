@@ -1,23 +1,23 @@
-"""One-off arrangement for the MetaMask (dappwright) visual e2e test in e2e/.
+"""One-off arrangement for the mock-wallet visual e2e suite in e2e/.
 
-dappwright (real MetaMask automation) only exists in Node, so that test lives outside
-this Python suite. This script does the API side in Python (this repo's existing lib/,
-same as every other suite) — mints + funds two throwaway UAT accounts, then writes their
-credentials to e2e/.arrangement.json for the Node/Playwright test to read.
+e2e/ is its own sibling pytest project with a minimal venv (playwright + eth_account + pytest-
+playwright only) -- this script does the actual minting/funding using this repo's own lib/
+(eth_account, faucet/funding helpers) from the ROOT venv instead, so e2e/'s venv doesn't need
+to duplicate pydantic/lib/configs just for a one-off setup step. e2e/conftest.py shells out to
+this script (subprocess, not import) via the root .venv's python, then reads back what it wrote.
 
-subject: spot-funded only, and generated from a fresh BIP-39 mnemonic (not just a raw key) —
-         the Node test onboards MetaMask directly with that mnemonic as its ONE and only
-         account, so there's no "import a second account + switch to it" step/ambiguity.
-         The Node test transfers spot -> perp itself via the real UI — that's the thing
-         under test, so it should start from a spot-only balance.
-maker:   spot + perp funded, ready to rest the crossing order. The Node test places that
+mints + funds two throwaway UAT accounts, writes their credentials to e2e/.arrangement.json.
+
+subject: spot-funded only, and generated from a fresh BIP-39 mnemonic (not just a raw key) --
+         the mock wallet in e2e/lib/wallet.py re-derives the account from this mnemonic to
+         sign with. The e2e test transfers spot -> perp itself via the real UI -- that's the
+         thing under test, so it should start from a spot-only balance.
+maker:   spot + perp funded, ready to rest the crossing order. The e2e test places that
          order itself via a raw API call once the subject's order is resting (needs a
          live price at that moment, so the order isn't pre-placed here).
 
 run (repo root, venv active): python3 tools/arrange_metamask_e2e.py
---out overrides the write path (default e2e/.arrangement.json) -- e2e_py/ (the Python POM port,
-in progress) passes its own path so the two suites never race each other's arrangement file
-during the coexistence period.
+--out overrides the write path (default e2e/.arrangement.json).
 """
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ from eth_account.messages import encode_defunct
 from eth_utils import to_checksum_address
 from playwright.sync_api import sync_playwright
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")  # invoked from e2e/ (cwd), not repo root
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")  # absolute path -- don't rely on cwd
 Account.enable_unaudited_hdwallet_features()
 
 from configs.competition import funding, perp_market
@@ -47,9 +47,9 @@ DEFAULT_OUT = Path(__file__).resolve().parent.parent / "e2e" / ".arrangement.jso
 # funding setup takes more transient 5xx than the hot path (same reasoning as
 # fixtures/accounts.py's PATIENT_RETRIES) -- hit both a 404 account_not_found (spot balance
 # read, right after a fresh deposit) and a 503 validation_unavailable (spot->perp transfer)
-# from this exact script during the e2e_py migration's confidence runs. This script used bare,
-# non-retrying contexts throughout (unlike fixtures/accounts.py's ClientFactory.make(...,
-# max_retries=...)) -- fixed here since both the current Node e2e/ and e2e_py depend on it.
+# from this exact script during confidence runs. This script used bare, non-retrying contexts
+# throughout (unlike fixtures/accounts.py's ClientFactory.make(..., max_retries=...)) -- fixed
+# here since e2e/ depends on it.
 PATIENT_RETRIES = 6
 
 
@@ -123,9 +123,9 @@ def main() -> None:
         "market": perp_market,
         "subject": {"address": subject_address, "mnemonic": subject_mnemonic},
         # private_key too, not just access_token: the token's 60s TTL is very likely expired by
-        # the time e2e_py's own cleanup runs (the UI flow alone can exceed that), and no
+        # the time e2e/'s own cleanup runs (the UI flow alone can exceed that), and no
         # refresh_token is captured here either -- re-deriving a fresh token from the key is
-        # the only reliable way for e2e_py to flatten maker's position at teardown.
+        # the only reliable way for e2e/ to flatten maker's position at teardown.
         "maker": {"address": maker_address, "access_token": maker_token, "private_key": _hex(maker_wallet.key)},
     }, indent=2))
     print(f"wrote {out}")
