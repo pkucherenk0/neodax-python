@@ -8,6 +8,8 @@ name: pr-check
 #  - e2e-ui: real browser automation (mock EIP-1193 wallet, no real MetaMask extension) against
 #    the deployed UAT FE, places real live orders on UAT. Deliberately blocking too (explicit
 #    choice, heavier than safe-lane) -- see e2e/README / AGENTS.md for what the suite does.
+#    Python/pytest POM (page objects in e2e/pages/) -- ported from an earlier Node/Playwright
+#    version of this same suite, since removed.
 
 on:
   pull_request:
@@ -56,38 +58,32 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Set up Python venv (global-setup.ts execs .venv/bin/python3)
+      - name: Set up root venv (e2e/conftest.py shells out to tools/arrange_metamask_e2e.py)
         run: |
           python -m venv .venv
           .venv/bin/pip install -r requirements.txt
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-          cache-dependency-path: e2e/package-lock.json
-
-      - name: Install e2e dependencies
+      - name: Set up e2e venv + browser
         working-directory: e2e
-        run: npm ci
-
-      - name: Install Playwright browser + OS deps
-        working-directory: e2e
-        run: npx playwright install --with-deps chromium
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -r requirements.txt
+          .venv/bin/playwright install --with-deps chromium
 
       - name: Real UI e2e (mock wallet -- spot->perp transfer, order, API counterparty match, position visible)
         working-directory: e2e
-        run: npm test
+        # addopts default-excludes trades; run the safe lane too or it silently never runs in CI.
+        run: .venv/bin/pytest -v && .venv/bin/pytest -v -m trades
 
       - name: Upload e2e artifacts (screenshots + failure traces)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: e2e-artifacts-${{ github.run_id }}
-          # e2e/screenshots: our named takeScreenshot() checkpoints. e2e/test-results:
-          # Playwright's own auto-screenshot + full trace (playwright.config.ts:
-          # screenshot/trace 'on-failure') -- covers a failure ANYWHERE, not just the steps
-          # we thought to instrument. `npx playwright show-trace <trace.zip>` replays it.
+          # e2e/screenshots: our named take_screenshot() checkpoints. e2e/test-results:
+          # pytest-playwright's own auto-screenshot + full trace (pytest.ini: --screenshot
+          # only-on-failure --tracing retain-on-failure) -- covers a failure ANYWHERE, not just
+          # the steps we thought to instrument. `playwright show-trace <trace.zip>` replays it.
           path: |
             e2e/screenshots
             e2e/test-results
