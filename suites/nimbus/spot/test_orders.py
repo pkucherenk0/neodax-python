@@ -41,17 +41,7 @@ def _cancel_leftovers(account):
 @pytest.mark.timeout(300)  # first `account` use -> faucet + transfer + enroll
 class TestSpotOrders:
     def test_resting_spot_limit_order_appears_in_open_orders_and_can_be_cancelled(self, account):
-        # arrange — price 10% below market (rests as bid, never fills). spot book can be empty
-        # on a quiet UAT market -> fall back to the perp market's oracle-fed mark price.
-        mark = get_perp_mark_price(account.trading_client, f"{spot_market}-PERP")
-        ref = spot_reference_price_or_mark(get_spot_top_of_book(account.trading_client, spot_market), mark)
-        assert ref > 0, "spot reference price available"
         amount = "1.0000"
-        price = f"{ref * 0.9:.2f}"
-        # ground truth: limit buy locks amount x price of quote exactly, no buffer/fee
-        # (slippage buffer is market-only). src: spot_service.go LockOrderFunds/
-        # PrepareLockOrderFunds ~L1800-1829, TestSpotService_LockOrderFunds_PostOnly_BuyLocksQuoteAtPrice.
-        reserved_notional = float(amount) * float(price)
         # `account` fixture confirms PERP settled (>=90%) but never re-confirms spot after the
         # transfer -- reading spot "before" immediately can catch that debit still trickling in
         # (real recurring flake). settle against the fixture's known funded baseline first.
@@ -61,6 +51,27 @@ class TestSpotOrders:
             lambda snap: abs(snap.available - expected_baseline) < 1e-6, timeout_s=20,
             message="USDT settled to its funded baseline (spot deposit minus perp transfer) before this test's own order",
         )
+
+        # arrange — price 10% below market (rests as bid, never fills). spot book can be empty
+        # on a quiet UAT market -> fall back to the perp market's oracle-fed mark price. computed
+        # HERE, right before placing the order, not earlier -- the balance-settle wait above can
+        # take up to 20s, live price can drift that much in 20s, stale price can land outside the
+        # exchange's deviation band (confirmed live: this exact gap -> limit_price_deviation_exceeded).
+        mark = get_perp_mark_price(account.trading_client, f"{spot_market}-PERP")
+        top = get_spot_top_of_book(account.trading_client, spot_market)
+        ref = spot_reference_price_or_mark(top, mark)
+        assert ref > 0, "spot reference price available"
+        price_val = ref * 0.9
+        # never cross the current best ask, real or a stale leftover from a past run's failed
+        # teardown -- confirmed live: a stale ask sitting well below the real mark ate this
+        # order as an instant taker fill instead of resting, breaking this test's whole point.
+        if top.best_ask > 0:
+            price_val = min(price_val, top.best_ask - 0.01)
+        price = f"{price_val:.2f}"
+        # ground truth: limit buy locks amount x price of quote exactly, no buffer/fee
+        # (slippage buffer is market-only). src: spot_service.go LockOrderFunds/
+        # PrepareLockOrderFunds ~L1800-1829, TestSpotService_LockOrderFunds_PostOnly_BuyLocksQuoteAtPrice.
+        reserved_notional = float(amount) * float(price)
 
         # act 1 — place the resting order, confirm it rests.
         order_uuid = step("place resting GTC spot limit buy 10% below market",
