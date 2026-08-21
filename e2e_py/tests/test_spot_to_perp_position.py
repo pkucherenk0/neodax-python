@@ -1,6 +1,7 @@
 """visual e2e: spot -> perp transfer, perp limit order via real UI, matched by raw-API
 counterparty order, position visually confirmed. ported from spot-to-perp-position.spec.ts.
 """
+import pytest
 from playwright.sync_api import Page, Playwright, expect
 
 from components.modals import WelcomeModal, WhatsNewModal
@@ -14,6 +15,7 @@ from pages.perp_order_page import PerpOrderPage
 from pages.positions_page import PositionsPage
 
 
+@pytest.mark.trades
 def test_spot_to_perp_transfer_ui_limit_order_matched_by_api_counterparty_position_visible(
     wallet_page: Page, arrangement: Arrangement, fe_base: str, playwright: Playwright,
 ) -> None:

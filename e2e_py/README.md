@@ -10,13 +10,18 @@ structured like `practice-py`'s POM layout: `pages/` (locators + actions, no `as
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 playwright install chromium
-pytest
+pytest                # safe default: connectivity check only, no real orders/transfers
+pytest -m trades      # the real flow -- places a real order, transfers real funds. deliberate.
 ```
 
 `pytest.ini` mirrors the old `playwright.config.ts`'s `use` block: headless chromium,
 screenshot-on-failure, trace-on-failure. Named checkpoint screenshots (`lib/screenshots.py`)
 land in `screenshots/`, same reasoning as before — automatic on-failure alone misses a failure
 inside a page-object method, not just the test itself.
+
+**Safety rail**: `trades` is opt-in, same as the main pytest suite's own markers -- the default
+`addopts` excludes it. CI explicitly passes `-m trades` (that's the whole point of running
+`e2e-ui`), so don't drop that flag from the workflow when touching it.
 
 ## Why this is Python now, not Node
 
