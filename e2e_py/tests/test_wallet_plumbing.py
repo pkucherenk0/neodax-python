@@ -24,4 +24,5 @@ def test_mock_wallet_reports_the_minted_subject_address(wallet_page: Page, arran
     accounts = wallet_page.evaluate(DISCOVER_AND_CALL_JS, {"method": "eth_requestAccounts"})
 
     # assert -- the address matches what tools/arrange_metamask_e2e.py actually minted.
-    assert accounts == [arrangement.subject.address]
+    assert accounts == [arrangement.subject.address], \
+        f"mock wallet should report the minted subject address, got {accounts}"

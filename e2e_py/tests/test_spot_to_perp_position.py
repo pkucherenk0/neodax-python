@@ -34,7 +34,8 @@ def test_spot_to_perp_transfer_ui_limit_order_matched_by_api_counterparty_positi
     assets = AssetsPage(wallet_page)
     assets.open(fe_base)
     assets.transfer_spot_to_perpetual("20000")
-    expect(assets.perpetual_balance_locator(fe_base, "20,000")).to_be_visible()
+    expect(assets.perpetual_balance_locator(fe_base, "20,000"),
+          "perpetual balance should show 20,000 after the spot -> perp transfer").to_be_visible()
 
     # act -- rest a limit buy 10% below mark (won't fill on its own).
     mark = fetch_live_mark_price(playwright, arrangement)
@@ -46,12 +47,14 @@ def test_spot_to_perp_transfer_ui_limit_order_matched_by_api_counterparty_positi
     # resting order now exists on a shared live book -- cancel on any throw, don't leave trash.
     open_orders = OpenOrdersPage(wallet_page)
     try:
-        expect(open_orders.order_locator(market_base)).to_be_visible()
+        expect(open_orders.order_locator(market_base),
+              "resting order should appear in Open Orders after placement").to_be_visible()
 
         match_resting_order_with_api_counterparty(playwright, arrangement)
 
         positions = PositionsPage(wallet_page)
-        expect(positions.wait_until_visible(market_base)).to_be_visible()
+        expect(positions.wait_until_visible(market_base),
+              "position should appear in Positions after the API counterparty match").to_be_visible()
     finally:
         open_orders.cancel_any_open_order()
         # flatten BOTH sides by crossing them against each other -- a plain reduce-only close
