@@ -18,8 +18,10 @@ scrubbed).
 - **Anti-false-positive discipline** — `tools/red_green.py` proves a test can actually go red
   before trusting it green; `tools/api_coverage.py` diffs the BE endpoint registry against test
   coverage. See `CONVENTIONS.md` §13.
-- **Real UI e2e** (`e2e/`) — a separate Playwright/Node project driving the actual frontend
-  through a mock EIP-1193 wallet (real signatures, no browser extension needed).
+- **Real UI e2e** (`e2e_py/`) — a separate pytest + Playwright project, Page-Object-Model
+  structured, driving the actual frontend through a mock EIP-1193 wallet (real signatures, no
+  browser extension, no Node dependency). Ported from an earlier Node/Playwright version
+  (`e2e/`, now unused — CI runs `e2e_py/`).
 - **k6 performance suite** (`perf/`) — a manual-only (never-in-CI) load/stress suite, tiered by
   blast radius (public reads → authed reads → real-but-never-filling orders → real matched
   fills), with automatic post-run analysis and a documented client+server metrics/monitoring
@@ -31,10 +33,11 @@ Three layers of the harness itself:
 - **API integration** (`suites/`, `tests/unit/`) — **pytest + Playwright in API mode** (no
   browser), with response-shape validation via [pydantic](https://docs.pydantic.dev). Domain
   logic lives in `lib/`; specs are thin **Arrange → Act → Assert** wrappers.
-- **UI e2e** (`e2e/`) — a separate Node/Playwright project driving the real FE through a mock
-  EIP-1193 wallet (`@johanneskares/wallet-mock`, real signatures, no browser extension). Lives
-  outside the Python suite because it needs a real browser. See `e2e/README` / `AGENTS.md` for
-  why and how.
+- **UI e2e** (`e2e_py/`) — a separate pytest + Playwright project (own venv, own `pytest.ini`)
+  driving the real FE through a mock EIP-1193 wallet (real signatures, no browser extension).
+  Lives outside the main suite because it needs a real browser and its own dependency set. Page
+  objects in `pages/`, shared modals in `components/`. See `e2e_py/README` / `AGENTS.md` for why
+  and how.
 - **Performance** (`perf/`) — a separate k6 project, run manually on demand only — **never
   wired into CI**. See `perf/README.md`.
 
@@ -60,7 +63,8 @@ pytest -m serial suites/competition/test_perp_fee_tier.py   # ordered fee-tier f
 pytest --env=stage ...                        # target stage instead of uat
 pytest -n 2 -m stateless                      # parallel via xdist (keep workers modest — live BE)
 
-cd e2e && npm install && npx playwright install chromium && npx playwright test  # UI e2e (separate project)
+cd e2e_py && python3 -m venv .venv && source .venv/bin/activate \
+  && pip install -r requirements.txt && playwright install chromium && pytest  # UI e2e (separate project)
 ```
 
 Env is chosen with `--env`:
@@ -89,7 +93,8 @@ Env is chosen with `--env`:
 - `serial` — ordered flows (fee-tier, position lifecycle, liquidation); xdist-safe, ordered
   classes carry `@pytest.mark.xdist_group` (`-n N --dist loadgroup`).
 
-UI e2e tests (mock wallet, real FE) are a separate Node project — see `e2e/`, not a pytest marker.
+UI e2e tests (mock wallet, real FE) are a separate pytest project with its own venv — see
+`e2e_py/`, not a marker in this one.
 
 ## Test validity — making sure a test can actually FAIL (anti-false-positive)
 
@@ -123,13 +128,16 @@ configs/      typed run params (no CLI-flag archaeology)
 suites/       competition/ + nimbus/ ; TEMPLATE_template.py to copy
 tests/unit/   offline unit tests for pure lib math (run first)
 tools/        red_green.py (anti-false-positive) + api_coverage.py (endpoint registry × tests)
-              + arrange_metamask_e2e.py (funds accounts for e2e/, see below)
+              + arrange_metamask_e2e.py (funds accounts for e2e_py/, see below; also still
+                supports the legacy e2e/ default path via --out)
               + arrange_perf_accounts.py (funds accounts for perf/, see below)
 
-e2e/          SEPARATE Node/Playwright project — UI e2e via a mock EIP-1193 wallet, no real
-              MetaMask extension. lib/wallet.ts (mock wallet install), lib/actions.ts (named
-              page actions), tests/. Not pytest — `cd e2e && npx playwright test`. See e2e/README
-              or AGENTS.md.
+e2e_py/       SEPARATE pytest + Playwright project (own venv) — UI e2e via a mock EIP-1193
+              wallet, no real MetaMask extension, no Node dependency. pages/ (Page Object
+              Model, one class per FE page/component) + components/ (shared modals) + lib/
+              (wallet mock, API helpers) + tests/. `cd e2e_py && pytest`. See e2e_py/README
+              or AGENTS.md. (e2e/ was an earlier Node/Playwright version of this same suite —
+              no longer used by CI, kept on disk pending its own removal.)
 
 perf/         SEPARATE k6 project — performance/load testing, manual only, NEVER wired into
               CI. Four safety tiers by blast radius (market-data / account-reads /

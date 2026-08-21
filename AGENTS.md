@@ -16,21 +16,26 @@ python tools/api_coverage.py           # BE endpoint registry × tests: coverage
 python tools/red_green.py <file> -k "name"   # prove a test can fail (CONVENTIONS §13)
 ```
 
-## UI e2e (separate Node project — not pytest)
-`e2e/` drives the real FE through a mock EIP-1193 wallet (`@johanneskares/wallet-mock`, real
-signatures, no browser extension) — plain JWT session injection can't get past the FE's
+## UI e2e (separate pytest + Playwright project, own venv)
+`e2e_py/` drives the real FE through a mock EIP-1193 wallet (real signatures, no browser
+extension, no Node dependency) — plain JWT session injection can't get past the FE's
 wallet-connect gate (order buttons stay disabled, Open Orders/Positions panels stay locked, even
-with a valid JWT); it needs a wallet wagmi/AppKit actually recognizes as connected. See
-`e2e/lib/wallet.ts` for why and how; `e2e/lib/actions.ts` for the reusable, named UI actions.
+with a valid JWT); it needs a wallet wagmi/AppKit actually recognizes as connected. Page-Object
+Model: `pages/` (one class per FE page/component, locators + actions, no asserts) +
+`components/` (shared modals) + `lib/wallet.py` (the mock wallet) + `lib/api.py` (pure API
+helpers). See `e2e_py/README.md` for why and how.
 ```bash
-cd e2e && npm install && npx playwright install chromium && npx playwright test
+cd e2e_py && python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt && playwright install chromium && pytest
 ```
+(`e2e/` was an earlier Node/Playwright version of this same suite — no longer used by CI or
+referenced by any workflow, kept on disk pending its own removal.)
 
 ## Performance (separate k6 project — manual only, NEVER in CI)
-`perf/` is k6 load/performance testing, three safety tiers (market-data / account-reads /
-order-placement — see `perf/README.md`). No workflow references it; it only ever runs on
-demand. `tools/arrange_perf_accounts.py` provisions its accounts, same pattern as
-`arrange_metamask_e2e.py` for `e2e/`.
+`perf/` is k6 load/performance testing, four safety tiers by blast radius (market-data /
+account-reads / order-placement / order-matching — see `perf/README.md`). No workflow
+references it; it only ever runs on demand. `tools/arrange_perf_accounts.py` provisions its
+accounts, same pattern as `arrange_metamask_e2e.py` for `e2e_py/`.
 
 ## ⚠️ Safety rails — READ BEFORE RUNNING OR EDITING
 - Tests hit **live environments and spend real balance.** There is no isolated "test" env.
@@ -50,7 +55,7 @@ demand. `tools/arrange_perf_accounts.py` provisions its accounts, same pattern a
 - `serial`    — ordered flows (fee-tier, lifecycle, liquidation); module state, xdist-safe via
   `@pytest.mark.xdist_group` (`-n N --dist loadgroup`).
 
-UI e2e tests live in the separate `e2e/` Node project (see above), not as a pytest marker here.
+UI e2e tests live in the separate `e2e_py/` pytest project (see above), not as a marker here.
 
 ## Where things live
 - `CONVENTIONS.md` — **the fixed test-writing contract. Read before writing any test.**
@@ -103,9 +108,10 @@ UI e2e tests live in the separate `e2e/` Node project (see above), not as a pyte
 ## Status
 lib (15 modules), fixtures/ (split by concern), 20 suites (health ×2 -- env reachability +
 faucet canary, competition ×7, nimbus perp ×8, nimbus spot ×3), offline unit tests, red-green
-+ api-coverage tools, and a real UI
-e2e suite (`e2e/`, separate Node project — mock EIP-1193 wallet, not session injection or a
-real MetaMask extension). Live suites have been run against UAT from this repo (safe/trades/serial lanes
-all green). CI is wired: `.github/workflows/ci.yml` (full lane, push) and
-`.github/workflows/pr-check.yml` (fast safe-lane, required PR check). Mutation testing (mutmut)
-is not wired yet.
++ api-coverage tools, a real UI e2e suite (`e2e_py/`, pytest + Playwright POM, mock EIP-1193
+wallet, no Node dependency -- ported from an earlier `e2e/` Node version, which CI no longer
+runs), and a manual-only k6 performance suite (`perf/`, four safety tiers, never wired into
+CI). Live suites have been run against UAT from this repo (safe/trades/serial lanes all green,
+e2e_py green across multiple live runs). CI is wired: `.github/workflows/ci.yml` (full lane +
+e2e-ui, push to main) and `.github/workflows/pr-check.yml` (fast safe-lane + e2e-ui, required PR
+check). Mutation testing (mutmut) is not wired yet.
