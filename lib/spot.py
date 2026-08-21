@@ -55,19 +55,32 @@ def spot_resting_sell_price(top: SpotTopOfBook, tick: float = 0.01, dp: int = 2)
     return f"{0:.{dp}f}"  # empty book. market buy can't fill anyway. fill poll surface it
 
 
+STALE_BOOK_DEVIATION = 0.15  # exchange rejects orders >~20% off; stay well inside that band
+
+
+def _stale_vs_mark(price: float, mark_price: float) -> bool:
+    """true if `price` drifted too far from `mark_price` to be a real quote -- confirmed live:
+    a leftover resting order from a past run's failed teardown can sit at a stale price
+    (e.g. best_bid far below mark) and get picked forever until someone cancels it, poisoning
+    every price derived from the book. mark_price<=0 -> nothing to compare, assume fine."""
+    return mark_price > 0 and abs(price - mark_price) / mark_price > STALE_BOOK_DEVIATION
+
+
 def spot_reference_price_or_mark(top: SpotTopOfBook, mark_price: float) -> float:
-    """live-book reference (spot_reference_price), else the corresponding perp market's mark
-    price when the spot book is completely empty (quiet UAT market, no resting orders yet)."""
+    """live-book reference (spot_reference_price), else perp mark when book is empty OR its
+    price has drifted too far from mark (stale leftover order, not a real quote)."""
     ref = spot_reference_price(top)
-    return ref if ref > 0 else mark_price
+    return mark_price if ref <= 0 or _stale_vs_mark(ref, mark_price) else ref
 
 
 def spot_resting_sell_price_or_mark(top: SpotTopOfBook, mark_price: float, tick: float = 0.01, dp: int = 2) -> str:
-    """like spot_resting_sell_price, but falls back to the perp mark price (instead of an
-    unusable "0.00") when the book is completely empty -- the maker's own resting order then
-    becomes the book's first price point."""
+    """like spot_resting_sell_price, but falls back to perp mark when book is empty OR stale
+    (best price far from mark) -- maker's own resting order then becomes the book's first
+    real price point."""
     price = spot_resting_sell_price(top, tick, dp)
-    return price if float(price) > 0 else f"{mark_price:.{dp}f}"
+    if float(price) > 0 and not _stale_vs_mark(float(price), mark_price):
+        return price
+    return f"{mark_price:.{dp}f}"
 
 
 def create_spot_order(
