@@ -22,6 +22,10 @@ name: perp-spot-tests
 # dominated by test_tiered_reduction.py's own step-hold timing, not xdist worker
 # count -- see CONVENTIONS.md known-gotchas); running the other two alongside it
 # instead of before it removes their time from the critical path.
+#
+# e2e-ui runs e2e_py/ (Python/pytest POM port of the old Node e2e/ suite) -- CI has cut
+# over, the old e2e/ (Node) directory still sits on disk unused pending its own manual
+# delete+rename (e2e_py/ -> e2e/) once that's convenient; not run by CI anymore either way.
 
 on:
   push:
@@ -151,40 +155,33 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Set up Python venv (global-setup.ts execs .venv/bin/python3)
+      - name: Set up root venv (e2e_py/conftest.py shells out to tools/arrange_metamask_e2e.py)
         run: |
           python -m venv .venv
           .venv/bin/pip install -r requirements.txt
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-          cache-dependency-path: e2e/package-lock.json
-
-      - name: Install e2e dependencies
-        working-directory: e2e
-        run: npm ci
-
-      - name: Install Playwright browser + OS deps
-        working-directory: e2e
-        run: npx playwright install --with-deps chromium
+      - name: Set up e2e_py venv + browser
+        working-directory: e2e_py
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -r requirements.txt
+          .venv/bin/playwright install --with-deps chromium
 
       - name: Real UI e2e (mock wallet -- spot->perp transfer, order, API counterparty match, position visible)
-        working-directory: e2e
-        run: npm test
+        working-directory: e2e_py
+        run: .venv/bin/pytest -v
 
       - name: Upload e2e artifacts (screenshots + failure traces)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: e2e-artifacts-push-${{ github.run_id }}
-          # e2e/screenshots: our named takeScreenshot() checkpoints. e2e/test-results:
-          # Playwright's own auto-screenshot + full trace (playwright.config.ts:
-          # screenshot/trace 'on-failure') -- covers a failure ANYWHERE, not just the steps
-          # we thought to instrument. `npx playwright show-trace <trace.zip>` replays it.
+          # e2e_py/screenshots: our named take_screenshot() checkpoints. e2e_py/test-results:
+          # pytest-playwright's own auto-screenshot + full trace (pytest.ini: --screenshot
+          # only-on-failure --tracing retain-on-failure) -- covers a failure ANYWHERE, not just
+          # the steps we thought to instrument. `playwright show-trace <trace.zip>` replays it.
           path: |
-            e2e/screenshots
-            e2e/test-results
+            e2e_py/screenshots
+            e2e_py/test-results
           if-no-files-found: ignore
           retention-days: 14
