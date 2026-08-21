@@ -1,6 +1,5 @@
-"""Loads .arrangement.json -- written by tools/arrange_metamask_e2e.py --out before every run
-(60s access_token TTL on the maker side -- never reuse a copy across sessions, same rule as the
-old e2e/.arrangement.json). Mirrors the old wallet.ts's `Arrangement` type.
+"""loads .arrangement.json, written by tools/arrange_metamask_e2e.py --out before every run.
+maker access_token ttl 60s -- never reuse across sessions. mirrors old wallet.ts Arrangement type.
 """
 from __future__ import annotations
 

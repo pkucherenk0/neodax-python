@@ -1,5 +1,5 @@
-"""Assets page: spot -> perp transfer dialog + perpetual balance display. Ported from
-e2e/lib/actions.ts's transferSpotBalanceToPerpetual/assertPerpetualBalanceContains/
+"""assets page: spot -> perp transfer dialog + perp balance display. ported from actions.ts
+transferSpotBalanceToPerpetual/assertPerpetualBalanceContains/
 refreshTransferFromBalanceViaDirectionToggle.
 """
 from __future__ import annotations
@@ -23,7 +23,7 @@ class AssetsPage:
     def transfer_spot_to_perpetual(self, amount: str) -> None:
         transfer_button = self.page.get_by_role("button", name="Transfer")
         click_robust_to_modal_race(self.page, transfer_button)
-        # "What's new" can reappear right after this click too -- dismiss again.
+        # "what's new" can reappear right after this click -- dismiss again.
         WhatsNewModal(self.page).dismiss_if_present("02a-post-transfer-click")
 
         dialog = self.page.locator("[role=dialog]").filter(has_not_text="What's new").first
@@ -39,12 +39,10 @@ class AssetsPage:
         self.page.locator("[role=dialog]").wait_for(state="detached", timeout=15_000)
 
     def _refresh_stale_from_balance(self, dialog: Locator) -> None:
-        """Known UAT FE bug: the 'Transfer from' balance can be stale on open, keeping Transfer
-        disabled despite real funds (confirmed independently: same balance visible via
-        GET /spot/account, identical transfer succeeds instantly via POST /accounts/transfer).
-        Toggling the selector away/back forces a refetch. The picker is a portal -- not
-        necessarily a DOM descendant of `dialog` -- so it's scoped at page level."""
-        timeout = 10_000  # a bad locator must fail fast, not ride the whole test timeout
+        """UAT FE bug: 'Transfer from' balance stale on open, keeps Transfer disabled despite
+        real funds. toggle selector away/back forces refetch. picker is a portal, scope at
+        page level not dialog."""
+        timeout = 10_000  # bad locator fail fast, not ride whole test timeout
         picker = self.page.locator("[role=dialog]").filter(has_not_text="What's new").filter(has_not_text="Transfer funds")
 
         dialog.get_by_role("button", name="Spot Account").click(timeout=timeout)
@@ -57,9 +55,8 @@ class AssetsPage:
         take_screenshot(self.page, "02f-transfer-swapped-back")
 
     def perpetual_balance_locator(self, fe_base: str, expected_text: str) -> Locator:
-        """Navigates fresh to /assets, opens the Perpetual tab, and returns the locator for
-        `expected_text` -- the TEST asserts on it (expect(locator).to_be_visible()), this just
-        gets there."""
+        """fresh goto /assets, open Perpetual tab, return locator for `expected_text` --
+        test asserts on it, this just gets there."""
         self.page.goto(f"{fe_base}/assets")
         perpetual_tab = self.page.get_by_text("Perpetual", exact=True).first
         perpetual_tab.wait_for(state="visible", timeout=15_000)

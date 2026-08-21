@@ -1,6 +1,5 @@
-"""Visual e2e: spot -> perp transfer, perp limit order via the real UI, matched by a raw-API
-counterparty order, position visually confirmed. Ported from
-e2e/tests/spot-to-perp-position.spec.ts -- see ../lib/wallet.py and ../pages/*.py.
+"""visual e2e: spot -> perp transfer, perp limit order via real UI, matched by raw-API
+counterparty order, position visually confirmed. ported from spot-to-perp-position.spec.ts.
 """
 from playwright.sync_api import Page, Playwright, expect
 
@@ -20,8 +19,7 @@ def test_spot_to_perp_transfer_ui_limit_order_matched_by_api_counterparty_positi
 ) -> None:
     market_base = arrangement.market.removesuffix("-PERP")  # table/row displays drop "-PERP"
 
-    # arrange -- connect (wallet already installed on wallet_page via the fixture; must have
-    # been installed before the first navigation, see lib/wallet.py).
+    # arrange -- connect (wallet already installed on wallet_page fixture, before first nav).
     home = HomePage(wallet_page)
     home.open(fe_base)
     home.wait_for_wallet_connected()

@@ -1,6 +1,6 @@
-"""Pure API helpers -- no browser/page involved. Ported from e2e/lib/actions.ts's
-fetchLiveMarkPrice/matchRestingOrderWithApiCounterparty. Uses Playwright's own request context
-(same as every other suite in this repo) rather than adding a new `requests` dependency.
+"""pure API helpers, no browser/page. ported from e2e/lib/actions.ts fetchLiveMarkPrice/
+matchRestingOrderWithApiCounterparty. playwright request context, not requests -- same as
+every other suite here.
 """
 from __future__ import annotations
 
@@ -27,10 +27,8 @@ def fetch_live_mark_price(playwright: Playwright, arrangement: Arrangement) -> f
 
 
 def match_resting_order_with_api_counterparty(playwright: Playwright, arrangement: Arrangement) -> None:
-    """Shared live book, thin market -- sweep the entire bid book rather than target our own
-    order (can't reliably target just ours: interrupted past runs can leave stale resting bids
-    we have no credentials to cancel, and the server tick-rounds submitted prices so filtering
-    by our computed price is unreliable)."""
+    """shared live book, thin market -- sweep whole bid book, not just our order (stale bids
+    from interrupted runs, no creds to cancel; server tick-rounds prices, can't filter by ours)."""
     ctx = playwright.request.new_context(base_url=arrangement.env.trading_base)
     try:
         book_res = ctx.get(f"/orderbook?symbol={arrangement.market}")

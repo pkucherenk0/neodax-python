@@ -1,6 +1,6 @@
-"""Named checkpoint screenshots along the happy path -- separate from pytest-playwright's own
-automatic on-failure screenshot (pytest.ini's --screenshot only-on-failure), which alone would
-miss a failure inside a page-object method rather than the test itself. See ../README.md.
+"""named checkpoint screenshots, happy path. separate from pytest-playwright's own on-failure
+screenshot (pytest.ini --screenshot only-on-failure) -- that alone misses a failure inside a
+page-object method, not just the test.
 """
 from __future__ import annotations
 

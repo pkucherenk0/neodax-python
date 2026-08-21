@@ -1,4 +1,4 @@
-"""Positions tab. Ported from e2e/lib/actions.ts's assertPositionVisibleInUi."""
+"""positions tab. ported from actions.ts assertPositionVisibleInUi."""
 from __future__ import annotations
 
 import time
@@ -13,13 +13,12 @@ class PositionsPage:
         self.page = page
 
     def wait_until_visible(self, market_base: str, timeout_ms: float = 45_000) -> Locator:
-        """Fill trails the fill by a beat, UI may not live-refresh -- bounded reload-retry loop
-        (a real ACTION with a wait, not a plain assertion, hence it lives here rather than as a
-        bare locator). Reload also re-triggers wagmi's wallet-auto-reconnect (retries ~1s up to
-        10x), so give re-hydration real headroom, not the default locator timeout.
+        """UI trails fill by a beat, may not live-refresh -- bounded reload-retry loop (real
+        action+wait, not plain assertion, lives here not as bare locator). reload re-triggers
+        wagmi auto-reconnect (~1s x10), give re-hydration real headroom.
 
-        Returns the locator once visible; the TEST still does the final explicit assert for
-        clarity, same convention as everywhere else in this port."""
+        returns locator once visible -- test still does final assert, same convention as rest
+        of this port."""
         deadline = time.monotonic() + timeout_ms / 1000
         position_locator = self.page.get_by_text(market_base, exact=False).first
 

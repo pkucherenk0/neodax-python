@@ -1,4 +1,4 @@
-"""Perp order form. Ported from e2e/lib/actions.ts's placeRestingPerpLimitBuy."""
+"""perp order form. ported from actions.ts placeRestingPerpLimitBuy."""
 from __future__ import annotations
 
 from playwright.sync_api import Page, expect
@@ -17,10 +17,9 @@ class PerpOrderPage:
         limit_tab.click()
 
     def place_resting_limit_buy(self, price: str, size: str) -> None:
-        """nth(0)/nth(1) below assumes fixed field order (price, size) -- unverified, no stable
-        selector. The FE's modals have reordered before; a silent reorder would fill plausible-
-        looking wrong values instead of failing loudly, so the actual field set is logged +
-        screenshotted every run (diagnosable from the report, not just a rerun)."""
+        """nth(0)/nth(1) assumes fixed field order (price, size) -- unverified, no stable
+        selector, FE reordered before. log + screenshot field set every run so a silent
+        reorder is diagnosable, not just a rerun."""
         inputs = self.page.locator("input[type=text]")
         n = inputs.count()
         print(f"--- ORDER FORM: {n} input[type=text] elements ---")
@@ -40,7 +39,7 @@ class PerpOrderPage:
 
         open_long_button = self.page.get_by_role("button", name="Open Long")
         open_long_button.click()
-        # form usable again (not just visible) -> submission round-trip done. expect() used here
-        # purely as a bounded wait primitive, not a test assertion -- see ../README.md convention.
+        # form usable again (not just visible) -> round-trip done. expect() as bounded wait
+        # here, not a test assertion -- see README convention.
         expect(open_long_button).to_be_enabled(timeout=10_000)
         take_screenshot(self.page, "04b-after-open-long")

@@ -1,5 +1,5 @@
-"""Landing page + wallet-connect handshake. Ported from e2e/lib/actions.ts's
-openHomePage/waitForWalletConnected."""
+"""landing page + wallet-connect handshake. ported from actions.ts openHomePage/
+waitForWalletConnected."""
 from __future__ import annotations
 
 import re
@@ -18,11 +18,9 @@ class HomePage:
         take_screenshot(self.page, "00-home-before-connect")
 
     def wait_for_wallet_connected(self, timeout_ms: float = 20_000) -> None:
-        """The app auto-connects on its own once a wallet is discoverable -- no Connect-button
-        click needed (confirmed live). Two signals accepted, not just one -- the top-nav
-        'Deposit' link, or the welcome modal's own 'Connected as 0x...' text, whichever renders
-        first (the modal can appear and cover the Deposit link before it would otherwise be
-        visible)."""
+        """app auto-connects once wallet discoverable, no click needed. accept either signal --
+        'Deposit' link or modal's 'Connected as 0x...' text, whichever renders first (modal can
+        cover Deposit link)."""
         connected = self.page.get_by_role("link", name="Deposit").or_(
             self.page.get_by_text(re.compile("Connected as"))
         )

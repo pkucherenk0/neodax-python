@@ -1,11 +1,5 @@
-"""Onboarding modals -- ported from e2e/lib/actions.ts's dismiss*/clickRobustToModalRace. See
-../README.md "Known issues" (once ported) for the why behind each workaround.
-
-Uses Locator.wait_for(), not is_visible(timeout=...) -- the latter is a one-shot snapshot check
-in Playwright, not a real poll, and these modals are confirmed to render a beat after load/
-click (see the original e2e/README.md), so a real bounded wait is needed to tell "absent" from
-"not rendered yet".
-"""
+"""onboarding modals. ported from e2e/lib/actions.ts dismiss*/clickRobustToModalRace.
+wait_for(), not is_visible(timeout=) -- latter one-shot snapshot, not real poll. see README."""
 from __future__ import annotations
 
 from playwright.sync_api import Locator, Page, TimeoutError as PlaywrightTimeoutError
@@ -22,7 +16,7 @@ def _wait_visible(locator: Locator, timeout: float) -> bool:
 
 
 def _wait_visible_gone(locator: Locator, timeout: float) -> None:
-    """Best-effort: swallow the timeout, same as the original's `.catch(() => {})`."""
+    """best-effort. swallow timeout, matches original's .catch(() => {})."""
     try:
         locator.wait_for(state="hidden", timeout=timeout)
     except PlaywrightTimeoutError:
@@ -30,8 +24,7 @@ def _wait_visible_gone(locator: Locator, timeout: float) -> None:
 
 
 class WelcomeModal:
-    """First-time onboarding modal, own CTA 'Start trading' not 'Got it'. Best-effort, no-op
-    if absent."""
+    """first-time modal. own CTA 'Start trading' not 'Got it'. best-effort, no-op if absent."""
 
     def __init__(self, page: Page) -> None:
         self.page = page
@@ -45,7 +38,7 @@ class WelcomeModal:
 
 
 class WhatsNewModal:
-    """Release modal, can reappear at more than one call site -- caller names the screenshot."""
+    """release modal, reappears at multiple call sites. caller names the screenshot."""
 
     def __init__(self, page: Page) -> None:
         self.page = page
@@ -59,9 +52,8 @@ class WhatsNewModal:
 
 
 def click_robust_to_modal_race(page: Page, target: Locator, timeout: float = 8000) -> None:
-    """A modal can render in the gap between a dismiss check and this click -- fixed a 10min
-    CI hang in the original. Try the click, dismiss both modals if that's what blocked it,
-    retry once."""
+    """modal can render between dismiss check and click -- fixed 10min CI hang in original.
+    try click, dismiss both modals if blocked, retry once."""
     try:
         target.click(timeout=timeout)
     except PlaywrightTimeoutError:

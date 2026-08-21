@@ -1,26 +1,21 @@
-"""Phase 1 spike -- PASSED. Proves the mock-wallet mechanism ports to Python with zero Node/JS
-bundling.
+"""phase 1 spike -- passed. proves mock-wallet mechanism ports to python, zero Node/JS bundling.
 
-Ported from @johanneskares/wallet-mock's actual internals (see e2e/node_modules/@johanneskares/
-wallet-mock/dist/{installMockWallet,createWallet}.js): the browser-side script is a tiny, generic
-EIP-6963 "announce a fake wallet" shim with NO crypto in it -- every request() call forwards to
-the test runner over page.exposeFunction(). Signing happens runner-side (Node+viem there,
-Python+eth_account here) -- so there's nothing to bundle, the shim below is copied as plain JS.
+wallet-mock's browser script is generic EIP-6963 shim, no crypto -- every request() forwards to
+runner over page.exposeFunction(). signing runner-side (node+viem there, python+eth_account
+here) -- nothing to bundle.
 
-Validated live: mint wallet -> install -> a simulated dapp discovers it via EIP-6963 ->
-eth_requestAccounts returns the right address -> personal_sign returns a REAL signature ->
-Account.recover_message confirms the signer. This becomes lib/wallet.py once e2e_py/'s real
-page objects exist; kept here as-is (not wired into pytest yet) as the Phase 1 record.
+validated live: mint wallet -> install -> dapp discovers via EIP-6963 -> eth_requestAccounts
+returns right address -> personal_sign returns real sig -> recover_message confirms signer.
+became lib/wallet.py once real page objects existed; kept as phase 1 record, not wired to pytest.
 
-Run: python3 e2e_py/spike_wallet_mock.py
+run: python3 e2e_py/spike_wallet_mock.py
 """
 from eth_account import Account
 from eth_account.messages import encode_defunct
 from playwright.sync_api import sync_playwright
 
-# generic EIP-6963 announce shim -- copied from the npm package's actual browser-side code
-# (see docstring). `eip1193Request` is the Python-exposed function; wrapped in parens to
-# actually IIFE (a bare `() => {}()` is a JS syntax error, not a call -- cost an hour to find).
+# EIP-6963 announce shim, copied from npm package browser code. eip1193Request is python-
+# exposed fn. wrapped in parens to IIFE -- bare `() => {}()` is JS syntax error, not a call.
 WALLET_ANNOUNCE_JS = """
 (() => {
   function announceMockWallet() {
@@ -45,8 +40,8 @@ WALLET_ANNOUNCE_JS = """
 })();
 """
 
-# what a real dapp does to discover a wallet (wagmi/AppKit do this internally) -- used here just
-# to drive the provider from Python via page.evaluate, no real FE involved yet.
+# real dapp wallet discovery (wagmi/AppKit do this internally) -- drives provider from python
+# via page.evaluate, no real FE yet.
 DISCOVER_AND_CALL_JS = """
 async (request) => {
   const found = await new Promise((resolve) => {
@@ -64,7 +59,7 @@ def main() -> None:
     print(f"minted throwaway wallet: {account.address}")
 
     def eip1193_request(request: dict):
-        """runner-side signing -- the browser shim above never sees a private key."""
+        """runner-side signing. browser shim never sees private key."""
         method = request.get("method")
         params = request.get("params") or []
         if method in ("eth_requestAccounts", "eth_accounts"):
@@ -84,18 +79,18 @@ def main() -> None:
         page.add_init_script(script=WALLET_ANNOUNCE_JS)
         page.goto("data:text/html,<html><body>spike</body></html>")
 
-        # 1 -- a "dapp" discovers the wallet and requests accounts, exactly like wagmi/AppKit would.
+        # 1 -- dapp discovers wallet, requests accounts, like wagmi/AppKit.
         accounts = page.evaluate(DISCOVER_AND_CALL_JS, {"method": "eth_requestAccounts"})
         assert accounts == [account.address], f"expected [{account.address}], got {accounts}"
         print(f"eth_requestAccounts -> {accounts}  (matches minted address: OK)")
 
-        # 2 -- a "dapp" asks for a personal_sign, same as this app's connect-handshake signature.
+        # 2 -- dapp asks personal_sign, same as app's connect-handshake sig.
         message = "sign in to nimbus (spike test)"
         message_hex = "0x" + message.encode().hex()
         signature = page.evaluate(DISCOVER_AND_CALL_JS, {"method": "personal_sign", "params": [message_hex, account.address]})
         print(f"personal_sign -> {signature}")
 
-        # 3 -- prove it's a REAL signature: recover the signer and confirm it's our address.
+        # 3 -- prove real sig: recover signer, confirm our address.
         recovered = Account.recover_message(encode_defunct(text=message), signature=signature)
         assert recovered == account.address, f"recovered {recovered}, expected {account.address}"
         print(f"recovered signer: {recovered}  (matches: OK)")

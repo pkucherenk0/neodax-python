@@ -1,8 +1,6 @@
-"""Phase 2 validation -- NOT the real FE flow yet (that's Phase 3). Proves the real pytest
-plumbing works end-to-end: conftest's session-scoped arrange (a real, live throwaway-UAT
-mint+fund via the root .venv's tools/arrange_metamask_e2e.py), the arrangement fixture reading
-it back, and wallet_page installing the mock wallet for the minted subject -- all through
-pytest's own fixture chain, not a standalone script.
+"""phase 2 validation, not real FE flow. proves pytest plumbing end-to-end: conftest's
+session-scoped arrange (real throwaway-UAT mint+fund), arrangement fixture reading it back,
+wallet_page installing mock wallet -- all through fixture chain, not a standalone script.
 """
 from lib.arrangement import Arrangement
 from playwright.sync_api import Page
