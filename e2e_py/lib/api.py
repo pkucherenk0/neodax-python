@@ -12,6 +12,18 @@ from playwright.sync_api import Playwright
 from lib.arrangement import Arrangement
 
 
+def _expect_shape(body: dict, path: str, keys: dict[str, type]) -> None:
+    """lightweight manual shape check -- no pydantic dependency (kept self-contained on
+    purpose, see README; the root suite's own lib/schemas.py already covers these endpoints
+    exhaustively). fails loud with the actual keys seen instead of a confusing downstream
+    KeyError/TypeError if the response shape ever drifts."""
+    for key, expected_type in keys.items():
+        if key not in body:
+            raise RuntimeError(f"{path}: response missing expected key {key!r} -- got {list(body.keys())}")
+        if not isinstance(body[key], expected_type):
+            raise RuntimeError(f"{path}: {key!r} should be {expected_type.__name__}, got {type(body[key]).__name__}")
+
+
 def fetch_live_mark_price(playwright: Playwright, arrangement: Arrangement) -> float:
     ctx = playwright.request.new_context(
         base_url=arrangement.env.trading_base,
@@ -20,8 +32,12 @@ def fetch_live_mark_price(playwright: Playwright, arrangement: Arrangement) -> f
     try:
         res = ctx.get(f"/perpetual/funding-rates/current?symbols={arrangement.market}")
         body = res.json()
-        rates = body.get("funding_rates") or [{}]
-        mark = float(rates[0].get("mark_price") or "0")
+        _expect_shape(body, "GET /perpetual/funding-rates/current", {"funding_rates": list})
+        rates = body["funding_rates"]
+        if not rates:
+            raise RuntimeError(f"funding-rates response has an empty funding_rates list: {body}")
+        _expect_shape(rates[0], "funding_rates[0]", {"mark_price": str})
+        mark = float(rates[0]["mark_price"])
         if not mark > 0:
             raise RuntimeError(f"could not read a live mark price: {body}")
         return mark
@@ -36,7 +52,8 @@ def match_resting_order_with_api_counterparty(playwright: Playwright, arrangemen
     try:
         book_res = ctx.get(f"/orderbook?symbol={arrangement.market}")
         book = book_res.json()
-        bids = book.get("bids") or []
+        _expect_shape(book, "GET /orderbook", {"bids": list})
+        bids = book["bids"]
         sweep_amount = sum(float(size) for _, size in bids)
         if sweep_amount < 0.01:
             raise RuntimeError(f"no bids in the live book to sweep (bids: {bids})")
