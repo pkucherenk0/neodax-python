@@ -2,12 +2,11 @@
 
 grug list. see [index](../../TEST_CASES.md).
 
-suite lives under `e2e/` — a **separate Node/Playwright project**, not pytest. Mock EIP-1193
-wallet (`@johanneskares/wallet-mock`, real signatures, no browser extension) driving the actual
-FE, because the FE's wallet-connect gate (Reown AppKit + wagmi) can't be satisfied by session
-injection alone: order buttons stay `disabled` and the Open Orders/Positions panels show
-"Connect Wallet to Start" without a real wallet connection.
-Run: `cd e2e && npm install && npx playwright install chromium && npx playwright test`.
+suite lives under `e2e/` — a **separate pytest + Playwright project** (own venv), not part of
+the main suite. mock EIP-1193 wallet (real signatures, no browser extension) drives the actual
+FE — session-injected JWT alone can't pass the wallet-connect gate (order buttons stay
+disabled, Open Orders/Positions panels stay locked). see `e2e/README.md`.
+Run: `cd e2e && pip install -r requirements.txt && playwright install chromium && pytest`.
 
 | case | grug |
 |---|---|

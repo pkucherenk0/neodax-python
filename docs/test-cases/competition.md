@@ -47,6 +47,29 @@ competition fee overlay (perp-spot-0). suites live under `suites/competition/`.
 | @trades | NIM deepens tier (no volume) | hold NIM. tier up by balance. rate step down. no trade. |
 
 ## test_perp_fee_tier.py — fee-tier step-down flow
+
+3 ordered `@serial` phases, module state carries the resolved schedule + qualified tier +
+ingested volume between them:
+```
+ phase 1 — read live comp schedule
+        │
+        v
+ map fee_tiers[] to unified tier shape, ascending by campaign-volume requirement
+        │
+        v
+ phase 2 — round-trip perp (subject taker / perp_maker) until traded notional covers the
+           gap to the cheaper tier's volume threshold
+        │
+        v
+ wait for campaign volume to ingest past threshold (per-account engine can trail ~1 fill)
+        │
+        v
+ phase 3 — effective rate settles to best-of(standard, overlay) at the qualified tier
+        │
+        v
+ assert: perp taker / spot taker (10bps->8bps) / maker side all charged the stepped-down rate
+```
+
 | tag | case | grug |
 |---|---|---|
 | @serial | schedule has cheaper tier | comp schedule offer cheaper tier past threshold. |

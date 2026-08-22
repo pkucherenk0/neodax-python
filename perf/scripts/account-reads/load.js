@@ -1,8 +1,5 @@
-// TIER 2 -- same reads as smoke.js, run at expected-peak concurrency.
-// VU count MUST NOT exceed the number of provisioned accounts (see ../../README.md) -- two
-// VUs sharing one account race on refresh_token rotation and break each other's auth.
-// Provision at least as many accounts as `target` below (60s token TTL -- do this immediately
-// before running):
+// TIER 2 -- same reads as smoke.js, at expected-peak concurrency. VU count MUST NOT exceed provisioned accounts (see ../../README.md -- shared accounts race on refresh_token).
+// Provision at least as many accounts as `target` below (60s token TTL -- do this immediately before running):
 //   python3 tools/arrange_perf_accounts.py --count 10
 // Run: k6 run perf/scripts/account-reads/load.js
 import http from 'k6/http';

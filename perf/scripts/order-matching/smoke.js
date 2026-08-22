@@ -1,17 +1,5 @@
-// TIER 4 -- REAL MONEY, REAL FILLS. Maker rests a small sell inside spread, taker crosses it
-// with a market buy -- confirms the match landed, then immediately flattens both sides
-// (reduce-only, retried -- see ../../lib/orders.js) to minimize how long real position/PnL
-// exposure exists. SMOKE-ONLY for now, on purpose: this is new maker/taker-pairing +
-// fill-confirm + flatten coordination logic that hasn't been proven at any scale yet, unlike
-// order-placement's placement/cancel which was already a known-good pattern from the pytest
-// suites before this script existed. See ../../README.md before scaling this up.
-//
-// Targets BNBUSDT-PERP -- idle, confirmed live-tradeable, and deliberately NOT
-// order-placement's LINKUSDT-PERP: real fills move price on a thin market, order-placement's
-// never-filling orders don't, so the two shouldn't share a market.
-//
-// Provision a fresh maker+taker pair first (60s token TTL -- do this immediately before
-// running):
+// TIER 4 -- REAL MONEY, REAL FILLS. Maker+taker cross and fill, then flatten both sides. SMOKE-ONLY (see ../../README.md before scaling up).
+// Provision a fresh maker+taker pair first (60s token TTL -- do this immediately before running):
 //   python3 tools/arrange_perf_accounts.py --count 0 --pairs 1
 // Run: k6 run perf/scripts/order-matching/smoke.js
 import http from 'k6/http';

@@ -42,9 +42,7 @@ def _cancel_leftovers(account):
 class TestSpotOrders:
     def test_resting_spot_limit_order_appears_in_open_orders_and_can_be_cancelled(self, account):
         amount = "1.0000"
-        # `account` fixture confirms PERP settled (>=90%) but never re-confirms spot after the
-        # transfer -- reading spot "before" immediately can catch that debit still trickling in
-        # (real recurring flake). settle against the fixture's known funded baseline first.
+        # settle against the fixture's known funded baseline first (spot debit can still be trickling in) -- see docs/test-cases/spot.md.
         expected_baseline = float(funding.spot_usdt) - float(funding.perp_usdt)
         before = poll_until(
             lambda: get_spot_balance_snapshot(account.trading_client, account.app_session_id, "USDT"),
@@ -52,25 +50,17 @@ class TestSpotOrders:
             message="USDT settled to its funded baseline (spot deposit minus perp transfer) before this test's own order",
         )
 
-        # arrange — price 10% below market (rests as bid, never fills). spot book can be empty
-        # on a quiet UAT market -> fall back to the perp market's oracle-fed mark price. computed
-        # HERE, right before placing the order, not earlier -- the balance-settle wait above can
-        # take up to 20s, live price can drift that much in 20s, stale price can land outside the
-        # exchange's deviation band (confirmed live: this exact gap -> limit_price_deviation_exceeded).
+        # arrange — price 10% below market, computed HERE not earlier (price drift during the settle wait can trip deviation band) -- see docs/test-cases/spot.md.
         mark = get_perp_mark_price(account.trading_client, f"{spot_market}-PERP")
         top = get_spot_top_of_book(account.trading_client, spot_market)
         ref = spot_reference_price_or_mark(top, mark)
         assert ref > 0, "spot reference price available"
         price_val = ref * 0.9
-        # never cross the current best ask, real or a stale leftover from a past run's failed
-        # teardown -- confirmed live: a stale ask sitting well below the real mark ate this
-        # order as an instant taker fill instead of resting, breaking this test's whole point.
+        # never cross best ask, incl. a stale leftover order -- see docs/test-cases/spot.md.
         if top.best_ask > 0:
             price_val = min(price_val, top.best_ask - 0.01)
         price = f"{price_val:.2f}"
-        # ground truth: limit buy locks amount x price of quote exactly, no buffer/fee
-        # (slippage buffer is market-only). src: spot_service.go LockOrderFunds/
-        # PrepareLockOrderFunds ~L1800-1829, TestSpotService_LockOrderFunds_PostOnly_BuyLocksQuoteAtPrice.
+        # ground truth: locks amount x price exactly, no buffer/fee -- see docs/test-cases/spot.md.
         reserved_notional = float(amount) * float(price)
 
         # act 1 — place the resting order, confirm it rests.
@@ -86,8 +76,7 @@ class TestSpotOrders:
         mine = next(o for o in get_spot_open_orders(account.trading_client, account.app_session_id, spot_market)
                     if o.order_id == order_uuid)
         record("resting spot order", mine.model_dump())
-        # the lock can trail the order becoming visible in open_orders by a beat -> poll for
-        # the exact expected lock (proven BE formula above), not a single read.
+        # lock can trail open_orders visibility by a beat -- poll for the exact expected lock.
         poll_until(
             lambda: get_spot_balance_snapshot(account.trading_client, account.app_session_id, "USDT").available,
             lambda avail: abs(avail - (before.available - reserved_notional)) < 1e-6, timeout_s=15,
@@ -107,9 +96,7 @@ class TestSpotOrders:
             passed=abs((before.available - during.available) - reserved_notional) < 1e-6,
             detail={"before": before.available, "during": during.available, "reservedNotional": reserved_notional},
         )
-        # hit /spot/orders (history): response shape schema-validated (contract check).
-        # just-placed order inclusion eventually-consistent on spot (lags open_orders, unlike
-        # perp /orders). so RECORD presence as observation, not assert on timing.
+        # /spot/orders inclusion is eventually-consistent -- record presence, don't assert on timing. see docs/test-cases/spot.md.
         history = get_spot_orders(account.trading_client, account.app_session_id, spot_market)
         record_check(name="/spot/orders returns a valid order list", passed=isinstance(history, list),
                      detail={"count": len(history), "containsOurs": any(o.order_id == order_uuid for o in history)})
@@ -123,8 +110,7 @@ class TestSpotOrders:
             lambda: any(o.order_id == order_uuid for o in get_spot_open_orders(account.trading_client, account.app_session_id, spot_market)),
             lambda seen: not seen, timeout_s=15, message="cancelled order left open_orders",
         )
-        # release target `before` valid since lock was proven exact above; real eventual-consistency
-        # lag (generous timeout). capture poll_until's own value, not a fresh re-read (different replica risk).
+        # capture poll_until's own value, not a fresh re-read (different replica risk).
         after_available = poll_until(
             lambda: get_spot_balance_snapshot(account.trading_client, account.app_session_id, "USDT").available,
             lambda avail: abs(avail - before.available) < 1e-6, timeout_s=30,
@@ -137,8 +123,7 @@ class TestSpotOrders:
                      passed=abs(after_available - before.available) < 1e-6,
                      detail={"before": before.available, "after": after_available})
 
-        # assert — resting shape was correct, lock/release both match the order's own known
-        # notional (independent oracle: the BE's own reservation formula, not a guessed value).
+        # assert — resting shape correct, lock/release match the order's own notional (independent oracle, see docs/test-cases/spot.md).
         assert mine.type == "limit", "order is a limit"
         assert mine.state in RESTING_STATES, "order is in a resting state"
         assert float(mine.fill_amount or "0") == 0, "resting order is unfilled"

@@ -126,47 +126,36 @@ Pure `lib/` logic is additionally guarded by unit tests (`pytest tests/unit`); m
 
 ## Known gotchas (debugging notes, not rules)
 
-**Multi-leg live-money setups: order by risk, not by narrative.** A test that opens more than
-one margin-consuming position on the same account should open the small/low-volatility leg(s)
-FIRST, the large/volatile one LAST — not in whatever order reads best in the test's own story.
-Real cause, found in `suites/nimbus/perp/test_liquidation_takeover.py`: opening a large
-($40k-notional) leg first let its own live mark-price movement (a few % in well under a
-minute — normal volatility on a thin market, not a bug) eat into unrealized PnL enough that a
-*second* order's margin-availability CHECK got rejected (`insufficient_margin`, `Available: 0`)
-even though the account had plenty of nominal equity. This is NOT a settlement lag — a
-poll-and-wait fix does nothing, because there's no lag to wait out, just a real loss that
-already happened. The fix was reordering the two `create_perp_order` calls (small leg's margin
-check now passes against the untouched deposit before the volatile leg exists at all), not
-padding the deposit or retrying. If you see `insufficient_margin` with a suspiciously exact
-`Available: 0` right after opening an unrelated position, dump the FULL account
-(`get_perp_account`, not just `get_perp_balance_snapshot`) before assuming it's a timing bug —
-`total_unrealized_pnl` will tell you immediately whether a real price move is the cause.
+**Multi-leg live-money setups: order by risk, not by narrative.** Open the small/low-volatility
+leg(s) FIRST, the large/volatile one LAST — never in whatever order reads best in the test's
+own story. Found in `test_liquidation_takeover.py`: opening a $40k leg first let its own mark
+move (normal thin-market volatility) eat unrealized PnL enough that the *second* order's margin
+CHECK got rejected (`insufficient_margin`, `Available: 0`) despite plenty of nominal equity —
+not a settlement lag, a real loss that already happened, so polling fixes nothing. Fix: reorder
+the `create_perp_order` calls, small leg first. Suspiciously exact `Available: 0` right after an
+unrelated open? Dump the FULL account (`get_perp_account`, not `get_perp_balance_snapshot`) —
+`total_unrealized_pnl` tells you immediately if a real price move is the cause.
 
 **UAT perp market allocation (mark-injection collisions).** `lib/mark_price.py`'s
-`simulate_mark_price` is **market-wide** — it can liquidate every account holding a position on
-that market, not just the test's own. Two mark-injecting tests sharing a market (even in
-separate CI runs on different branches — confirmed live: this happened) corrupt each other with
-bogus failures (`assert 0 > 0`, poll timeouts) that look like real bugs but aren't. Live UAT has
-10 perp markets (`GET /perpetual/exchangeInfo`, all with an identical risk-tier ladder except
-BTC — a market swap needs no sizing-config changes), BUT the risk-tier ladder alone does NOT
-mean a market is actually open for trading — confirmed live, `XRPUSDT-PERP`, `TAOUSDT-PERP`, and
-`1000PEPEUSDT-PERP` all reject every new order with `400 mark_price_quality_restricted`
-("opening orders temporarily disabled during mark price safe mode"), and `SOLUSDT-PERP` rejects
-with `400 mark_price_unavailable` — both look like a live oracle-feed/circuit-breaker state on
-markets this repo has never touched before, not something visible from `exchangeInfo`. Verify
-any new market with a real order attempt (small, disposable account) before wiring it into a
-test, not just a risk-tier-ladder check. Current allocation:
-- **Reserved, never inject:** `BTCUSDT-PERP` (default `perp_market`, most of the Trades lane +
-  `e2e/`'s resting order), `ETHUSDT-PERP` (spot's `test_trade.py` reads its mark as a fallback
-  reference price — injecting it leaks into the spot suite).
-- **In use for injection, confirmed live:** `SUIUSDT-PERP` + `DOGEUSDT-PERP`
-  (`test_liquidation_takeover.py`'s long/short legs), `BNBUSDT-PERP`
-  (`test_tiered_reduction.py`'s piecewise test), `LINKUSDT-PERP`
-  (`test_tiered_reduction.py`'s TC-LIQ-030 test).
-- **Confirmed NOT usable right now** (oracle safe-mode / mark unavailable, as of 2026-08-18):
-  `XRPUSDT-PERP`, `TAOUSDT-PERP`, `1000PEPEUSDT-PERP`, `SOLUSDT-PERP`. Re-check live before
-  reusing any of these — this may be a transient UAT state, not permanent.
-Adding a new mark-injecting test? Confirm a candidate market live first, then update this note.
+`simulate_mark_price` is **market-wide** — it can liquidate every account on that market, not
+just the test's own. Two mark-injecting tests sharing a market (even across CI runs on
+different branches — confirmed live) corrupt each other (`assert 0 > 0`, poll timeouts) in ways
+that look like real bugs. 10 perp markets live (`GET /perpetual/exchangeInfo`, identical
+risk-tier ladder except BTC), but the ladder alone doesn't mean a market is open for trading —
+verify any new market with a real order first, not just the ladder. Current allocation:
+
+| Market | Status |
+|---|---|
+| `BTCUSDT-PERP` | reserved, never inject — default `perp_market`, most of Trades lane + `e2e/`'s resting order |
+| `ETHUSDT-PERP` | reserved, never inject — spot `test_trade.py` reads its mark as fallback reference price |
+| `SUIUSDT-PERP`, `DOGEUSDT-PERP` | in use — `test_liquidation_takeover.py` long/short legs |
+| `BNBUSDT-PERP` | in use — `test_tiered_reduction.py` piecewise test |
+| `LINKUSDT-PERP` | in use — `test_tiered_reduction.py` TC-LIQ-030 |
+| `XRPUSDT-PERP`, `TAOUSDT-PERP`, `1000PEPEUSDT-PERP` | **not usable** (as of 2026-08-18) — `400 mark_price_quality_restricted` |
+| `SOLUSDT-PERP` | **not usable** (as of 2026-08-18) — `400 mark_price_unavailable` |
+
+Re-check the "not usable" row live before reusing — may be transient UAT state. New
+mark-injecting test → confirm the market live first, update this table.
 
 ## The canonical shape
 See **`suites/TEMPLATE_template.py`** (copy it) and the live reference

@@ -44,12 +44,7 @@ from lib.http import DEFAULT_RPS, RateLimiter, ResilientClient, ResilientOptions
 
 DEFAULT_OUT = Path(__file__).resolve().parent.parent / "e2e" / ".arrangement.json"
 
-# funding setup takes more transient 5xx than the hot path (same reasoning as
-# fixtures/accounts.py's PATIENT_RETRIES) -- hit both a 404 account_not_found (spot balance
-# read, right after a fresh deposit) and a 503 validation_unavailable (spot->perp transfer)
-# from this exact script during confidence runs. This script used bare, non-retrying contexts
-# throughout (unlike fixtures/accounts.py's ClientFactory.make(..., max_retries=...)) -- fixed
-# here since e2e/ depends on it.
+# funding setup eats more transient 5xx than the hot path (404 account_not_found, 503 validation_unavailable) -- see e2e/README.md.
 PATIENT_RETRIES = 6
 
 
@@ -122,10 +117,7 @@ def main() -> None:
         "env": {"trading_base": cfg.trading_base, "auth_base": cfg.auth_base},
         "market": perp_market,
         "subject": {"address": subject_address, "mnemonic": subject_mnemonic},
-        # private_key too, not just access_token: the token's 60s TTL is very likely expired by
-        # the time e2e/'s own cleanup runs (the UI flow alone can exceed that), and no
-        # refresh_token is captured here either -- re-deriving a fresh token from the key is
-        # the only reliable way for e2e/ to flatten maker's position at teardown.
+        # private_key too -- 60s access_token TTL likely expired by e2e/ teardown, no refresh_token captured either.
         "maker": {"address": maker_address, "access_token": maker_token, "private_key": _hex(maker_wallet.key)},
     }, indent=2))
     print(f"wrote {out}")
